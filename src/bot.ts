@@ -117,7 +117,9 @@ export class RgmcItBot extends TeamsActivityHandler {
         await context.sendActivities([{ type: 'typing' }]);
         try {
           const answer = await askGpt(question);
-          await context.sendActivity(answer);
+          const msg = MessageFactory.text(answer);
+          msg.textFormat = 'markdown';
+          await context.sendActivity(msg);
         } catch (err) {
           await context.sendActivity(`❌ Failed to get a response: ${(err as Error).message}`);
         }
