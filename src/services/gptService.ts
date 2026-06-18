@@ -13,7 +13,7 @@ function getClient(): OpenAI {
 export async function askGpt(question: string): Promise<string> {
   const openai = getClient();
 
-  const response = await openai.chat.completions.create({
+  const stream = await openai.chat.completions.create({
     model: config.gptVersion,
     messages: [
       {
@@ -26,7 +26,13 @@ export async function askGpt(question: string): Promise<string> {
       },
     ],
     max_tokens: config.gptLimit,
+    stream: true,
   });
 
-  return response.choices[0]?.message?.content?.trim() || 'Sorry, I did not get a response. Please try again.';
+  let fullResponse = '';
+  for await (const chunk of stream) {
+    fullResponse += chunk.choices[0]?.delta?.content ?? '';
+  }
+
+  return fullResponse.trim() || 'Sorry, I did not get a response. Please try again.';
 }

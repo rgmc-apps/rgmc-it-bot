@@ -34,7 +34,7 @@ function viewTicketAction(ticket: Ticket) {
   return {
     type: 'Action.OpenUrl',
     title: 'View Ticket',
-    url: `${config.gatewayBaseUrl}/admin/issues#${ticket.id}`,
+    url: `${config.gatewayBaseUrl.replace(/\/$/, '')}/admin/issues/${ticket.id}`,
   };
 }
 
