@@ -7,9 +7,42 @@ const app = express();
 app.use(express.json());
 app.use('/static', express.static(path.join(__dirname, '..', 'static')));
 
-// Lightweight ping — always reachable before any heavy imports
+// Lightweight ping — always reachable, no dependencies
 app.get('/ping', (_req: Request, res: Response) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// Full health check — lazy requires so nothing crashes at startup
+app.get('/health', async (_req: Request, res: Response) => {
+  const checks: Record<string, { status: 'ok' | 'error'; message?: string }> = {};
+
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { config } = require('./config') as typeof import('./config');
+    checks.bot_credentials = config.botId && config.botPassword
+      ? { status: 'ok' }
+      : { status: 'error', message: 'BOT_ID or BOT_PASSWORD is missing' };
+  } catch (err) {
+    checks.bot_credentials = { status: 'error', message: (err as Error).message };
+  }
+
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { db } = require('./services/supabase') as typeof import('./services/supabase');
+    const { error } = await db.from('bot_subscriptions').select('id').limit(1);
+    checks.supabase = error
+      ? { status: 'error', message: error.message }
+      : { status: 'ok' };
+  } catch (err) {
+    checks.supabase = { status: 'error', message: (err as Error).message };
+  }
+
+  const allOk = Object.values(checks).every(c => c.status === 'ok');
+  res.status(allOk ? 200 : 503).json({
+    status: allOk ? 'ok' : 'degraded',
+    timestamp: new Date().toISOString(),
+    checks,
+  });
 });
 
 // Bind the port FIRST so Cloud Run's startup probe passes immediately
@@ -32,7 +65,6 @@ function registerRoutes(): void {
     const { RgmcItBot } = require('./bot') as typeof import('./bot');
     const { createWebhookRouter } = require('./routes/webhook') as typeof import('./routes/webhook');
     const { createAdminRouter } = require('./routes/admin') as typeof import('./routes/admin');
-    const { createHealthRouter } = require('./routes/health') as typeof import('./routes/health');
     /* eslint-enable @typescript-eslint/no-var-requires */
 
     // Bot Framework adapter
@@ -65,9 +97,6 @@ function registerRoutes(): void {
 
     // POST/GET /api/admin/codes, GET /api/admin/subscriptions
     app.use('/api/admin', createAdminRouter());
-
-    // GET /health — checks bot credentials + Supabase connectivity
-    app.use('/health', createHealthRouter());
 
     console.log('Routes registered:');
     console.log('  POST /api/messages');
