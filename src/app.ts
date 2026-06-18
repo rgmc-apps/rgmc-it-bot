@@ -1,6 +1,5 @@
 import express, { Request, Response } from 'express';
 import path from 'path';
-import { createHealthRouter } from './routes/health';
 
 const port = parseInt(process.env.PORT || '3978', 10);
 
@@ -8,8 +7,10 @@ const app = express();
 app.use(express.json());
 app.use('/static', express.static(path.join(__dirname, '..', 'static')));
 
-// Health check is registered before anything else — always reachable
-app.use('/health', createHealthRouter());
+// Lightweight ping — always reachable before any heavy imports
+app.get('/ping', (_req: Request, res: Response) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
 
 // Bind the port FIRST so Cloud Run's startup probe passes immediately
 app.listen(port, () => {
@@ -31,6 +32,7 @@ function registerRoutes(): void {
     const { RgmcItBot } = require('./bot') as typeof import('./bot');
     const { createWebhookRouter } = require('./routes/webhook') as typeof import('./routes/webhook');
     const { createAdminRouter } = require('./routes/admin') as typeof import('./routes/admin');
+    const { createHealthRouter } = require('./routes/health') as typeof import('./routes/health');
     /* eslint-enable @typescript-eslint/no-var-requires */
 
     // Bot Framework adapter
@@ -64,6 +66,9 @@ function registerRoutes(): void {
     // POST/GET /api/admin/codes, GET /api/admin/subscriptions
     app.use('/api/admin', createAdminRouter());
 
+    // GET /health — checks bot credentials + Supabase connectivity
+    app.use('/health', createHealthRouter());
+
     console.log('Routes registered:');
     console.log('  POST /api/messages');
     console.log('  POST /api/notify');
@@ -73,6 +78,7 @@ function registerRoutes(): void {
     console.log('  GET  /api/admin/codes');
     console.log('  GET  /api/admin/subscriptions');
     console.log('  GET  /health');
+    console.log('  GET  /ping');
 
   } catch (err) {
     console.error('registerRoutes failed:', (err as Error).message, (err as Error).stack);
