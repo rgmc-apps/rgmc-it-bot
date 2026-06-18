@@ -1,0 +1,26 @@
+{
+  "name": "rgmc-it-bot",
+  "version": "1.0.0",
+  "description": "RGMC IT Helpdesk MS Teams Bot — ticket notifications and status queries",
+  "main": "dist/app.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/app.js",
+    "dev": "ts-node src/app.ts",
+    "watch": "tsc --watch"
+  },
+  "dependencies": {
+    "botbuilder": "^4.22.3",
+    "express": "^4.18.2",
+    "@supabase/supabase-js": "^2.39.0",
+    "dotenv": "^16.3.1",
+    "uuid": "^9.0.0"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.11.0",
+    "@types/uuid": "^9.0.7",
+    "typescript": "^5.3.3",
+    "ts-node": "^10.9.2"
+  }
+}
