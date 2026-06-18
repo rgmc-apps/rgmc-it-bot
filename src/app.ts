@@ -1,5 +1,6 @@
 import express, { Request, Response } from 'express';
 import path from 'path';
+import { createHealthRouter } from './routes/health';
 
 const port = parseInt(process.env.PORT || '3978', 10);
 
@@ -8,9 +9,7 @@ app.use(express.json());
 app.use('/static', express.static(path.join(__dirname, '..', 'static')));
 
 // Health check is registered before anything else — always reachable
-app.get('/health', (_req: Request, res: Response) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
-});
+app.use('/health', createHealthRouter());
 
 // Bind the port FIRST so Cloud Run's startup probe passes immediately
 app.listen(port, () => {
