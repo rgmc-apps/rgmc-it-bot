@@ -3,7 +3,7 @@ import { ConversationReference } from 'botbuilder';
 import { config } from '../config';
 import { BotSubscription, RegistrationCode, Ticket } from '../types';
 
-const db = createClient(config.supabaseUrl, config.supabaseKey);
+export const db = createClient(config.supabaseUrl, config.supabaseKey);
 
 // ─── Tickets ──────────────────────────────────────────────────────────────────
 

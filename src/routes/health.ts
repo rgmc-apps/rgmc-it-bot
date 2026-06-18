@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
-import { createClient } from '@supabase/supabase-js';
 import { config } from '../config';
+import { db } from '../services/supabase';
 
 export function createHealthRouter(): Router {
   const router = Router();
@@ -15,8 +15,7 @@ export function createHealthRouter(): Router {
 
     // Supabase connectivity
     try {
-      const db = createClient(config.supabaseUrl, config.supabaseKey);
-      const { error } = await db.from('channel_subscriptions').select('id').limit(1);
+      const { error } = await db.from('bot_subscriptions').select('id').limit(1);
       checks.supabase = error
         ? { status: 'error', message: error.message }
         : { status: 'ok' };
