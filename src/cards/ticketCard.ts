@@ -16,16 +16,17 @@ const STATUS_COLORS: Record<string, string> = {
   closed: 'default',
 };
 
-function priorityColor(priority: string | null): string {
-  return PRIORITY_COLORS[(priority || '').toLowerCase()] || 'default';
-}
-
 function statusColor(status: string): string {
   return STATUS_COLORS[status.toLowerCase()] || 'default';
 }
 
 function formatStatus(status: string): string {
   return status.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function logoUrl(): string | null {
+  if (!config.botBaseUrl) return null;
+  return `${config.botBaseUrl.replace(/\/$/, '')}/static/logo.png`;
 }
 
 function viewTicketAction(ticket: Ticket) {
@@ -37,10 +38,30 @@ function viewTicketAction(ticket: Ticket) {
   };
 }
 
+function logoColumn() {
+  const url = logoUrl();
+  if (!url) return null;
+  return {
+    type: 'Column',
+    width: 'auto',
+    verticalContentAlignment: 'Center',
+    items: [
+      {
+        type: 'Image',
+        url,
+        width: '48px',
+        style: 'Default',
+        altText: 'RGMC',
+      },
+    ],
+  };
+}
+
 export function buildTicketCreatedCard(ticket: Ticket): Attachment {
   const displayNumber = ticket.ticket_number || ticket.id.slice(0, 8).toUpperCase();
   const title = ticket.title || ticket.description.slice(0, 80) + (ticket.description.length > 80 ? '…' : '');
   const viewAction = viewTicketAction(ticket);
+  const logo = logoColumn();
 
   const card = {
     type: 'AdaptiveCard',
@@ -53,18 +74,15 @@ export function buildTicketCreatedCard(ticket: Ticket): Attachment {
           {
             type: 'ColumnSet',
             columns: [
-              {
-                type: 'Column',
-                width: 'auto',
-                items: [{ type: 'TextBlock', text: '🎫', size: 'Large', wrap: false }],
-              },
+              ...(logo ? [logo] : []),
               {
                 type: 'Column',
                 width: 'stretch',
+                verticalContentAlignment: 'Center',
                 items: [
                   {
                     type: 'TextBlock',
-                    text: `New Ticket — ${displayNumber}`,
+                    text: `🎫 New Ticket — ${displayNumber}`,
                     weight: 'Bolder',
                     size: 'Medium',
                     wrap: false,
@@ -119,6 +137,7 @@ export function buildTicketUpdatedCard(ticket: Ticket, changes: TicketChanges): 
   const displayNumber = ticket.ticket_number || ticket.id.slice(0, 8).toUpperCase();
   const title = ticket.title || ticket.description.slice(0, 60) + '…';
   const viewAction = viewTicketAction(ticket);
+  const logo = logoColumn();
 
   const changedFields = Object.entries(changes)
     .filter(([, v]) => v.from !== v.to)
@@ -141,18 +160,15 @@ export function buildTicketUpdatedCard(ticket: Ticket, changes: TicketChanges): 
           {
             type: 'ColumnSet',
             columns: [
-              {
-                type: 'Column',
-                width: 'auto',
-                items: [{ type: 'TextBlock', text: headerEmoji, size: 'Large', wrap: false }],
-              },
+              ...(logo ? [logo] : []),
               {
                 type: 'Column',
                 width: 'stretch',
+                verticalContentAlignment: 'Center',
                 items: [
                   {
                     type: 'TextBlock',
-                    text: `Ticket Updated — ${displayNumber}`,
+                    text: `${headerEmoji} Ticket Updated — ${displayNumber}`,
                     weight: 'Bolder',
                     size: 'Medium',
                     wrap: false,
@@ -213,6 +229,7 @@ export function buildTicketStatusCard(ticket: Ticket): Attachment {
   const displayNumber = ticket.ticket_number || ticket.id.slice(0, 8).toUpperCase();
   const title = ticket.title || ticket.description.slice(0, 80) + (ticket.description.length > 80 ? '…' : '');
   const viewAction = viewTicketAction(ticket);
+  const logo = logoColumn();
 
   const card = {
     type: 'AdaptiveCard',
@@ -223,18 +240,32 @@ export function buildTicketStatusCard(ticket: Ticket): Attachment {
         style: 'emphasis',
         items: [
           {
-            type: 'TextBlock',
-            text: `Ticket ${displayNumber}`,
-            weight: 'Bolder',
-            size: 'Large',
-          },
-          {
-            type: 'TextBlock',
-            text: title,
-            size: 'Small',
-            wrap: true,
-            spacing: 'None',
-            isSubtle: true,
+            type: 'ColumnSet',
+            columns: [
+              ...(logo ? [logo] : []),
+              {
+                type: 'Column',
+                width: 'stretch',
+                verticalContentAlignment: 'Center',
+                items: [
+                  {
+                    type: 'TextBlock',
+                    text: `Ticket ${displayNumber}`,
+                    weight: 'Bolder',
+                    size: 'Large',
+                    wrap: false,
+                  },
+                  {
+                    type: 'TextBlock',
+                    text: title,
+                    size: 'Small',
+                    wrap: true,
+                    spacing: 'None',
+                    isSubtle: true,
+                  },
+                ],
+              },
+            ],
           },
         ],
       },
