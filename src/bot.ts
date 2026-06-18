@@ -7,6 +7,7 @@ import {
   getChannelStatus,
 } from './services/channelService';
 import { buildTicketStatusCard } from './cards/ticketCard';
+import { askGpt } from './services/gptService';
 
 const HELP_TEXT = `**RGMC IT Bot — Commands**
 
@@ -30,6 +31,9 @@ const HELP_TEXT = `**RGMC IT Bot — Commands**
 
 \`@RGMC IT Bot status\`
   Show the notification configuration for this channel.
+
+\`@RGMC IT Bot ask <QUESTION>\`
+  Ask anything — your question will be answered by AI.
 
 \`@RGMC IT Bot help\`
   Show this message.`;
@@ -101,6 +105,22 @@ export class RgmcItBot extends TeamsActivityHandler {
       case 'status': {
         const statusMessage = await getChannelStatus(context);
         await context.sendActivity(statusMessage);
+        break;
+      }
+
+      case 'ask': {
+        const question = args.join(' ').trim();
+        if (!question) {
+          await context.sendActivity('❌ Please provide a question. Example:\n`@RGMC IT Bot ask How do I reset my password?`');
+          return;
+        }
+        await context.sendActivities([{ type: 'typing' }]);
+        try {
+          const answer = await askGpt(question);
+          await context.sendActivity(answer);
+        } catch (err) {
+          await context.sendActivity(`❌ Failed to get a response: ${(err as Error).message}`);
+        }
         break;
       }
 

@@ -21,4 +21,8 @@ export const config = {
 
   gatewayBaseUrl: process.env.GATEWAY_BASE_URL || '',
   botBaseUrl: process.env.BOT_BASE_URL || '',
+
+  gptApiKey: get('GPT_API_KEY'),
+  gptVersion: process.env.GPT_VERSION || 'gpt-4o',
+  gptLimit: parseInt(process.env.GPT_LIMIT || '1000', 10),
 };

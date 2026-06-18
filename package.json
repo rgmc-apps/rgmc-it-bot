@@ -10,17 +10,18 @@
     "watch": "tsc --watch"
   },
   "dependencies": {
-    "botbuilder": "^4.22.3",
-    "express": "^4.18.2",
     "@supabase/supabase-js": "^2.39.0",
+    "botbuilder": "^4.22.3",
     "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "openai": "^6.44.0",
     "uuid": "^9.0.0"
   },
   "devDependencies": {
     "@types/express": "^4.17.21",
     "@types/node": "^22.0.0",
     "@types/uuid": "^9.0.7",
-    "typescript": "^5.3.3",
-    "ts-node": "^10.9.2"
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3"
   }
 }
