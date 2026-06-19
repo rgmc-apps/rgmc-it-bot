@@ -9,6 +9,7 @@ import {
 import { buildTicketStatusCard } from './cards/ticketCard';
 import { buildSiteStatusCard } from './cards/siteStatusCard';
 import { buildSiteInfoCard } from './cards/siteInfoCard';
+import { buildHelpCard } from './cards/helpCard';
 import { askGpt } from './services/gptService';
 import { pingSystem } from './services/pingService';
 import { PingResult } from './types';
@@ -24,41 +25,6 @@ function extractArg(args: string[], fillers: Set<string>): string {
   while (remaining.length && fillers.has(remaining[0])) remaining.shift();
   return remaining.join(' ').trim().replace(/\?+$/, '');
 }
-
-const HELP_TEXT = `🤖 **RGMC IT Bot — Commands**
-
-\`@RGMC IT Bot register <CODE>\`
-  Register this channel to receive ticket notifications.
-
-\`@RGMC IT Bot unregister\`
-  Stop receiving ticket notifications in this channel.
-
-\`@RGMC IT Bot ticket <TICKET-NUMBER>\`
-  Look up the status of a specific ticket (e.g. \`ticket IT-0042\`).
-
-\`@RGMC IT Bot configure all\`
-  Reset filters — receive notifications for all tickets.
-
-\`@RGMC IT Bot configure priority high critical\`
-  Only receive notifications for high/critical priority tickets.
-
-\`@RGMC IT Bot configure type incident service_request\`
-  Only receive notifications for specific ticket types.
-
-\`@RGMC IT Bot status\`
-  Show the notification configuration for this channel.
-
-\`@RGMC IT Bot ask <QUESTION>\`
-  Ask anything — your question will be answered by AI.
-
-\`@RGMC IT Bot gumagana po ba yung <SITE>\`
-  Check if a site is up (e.g. \`gumagana po ba yung payroll\`).
-
-\`@RGMC IT Bot anong site po yung <SYSTEM>\`
-  Get the URL(s) of a system (e.g. \`anong site po yung payroll\`).
-
-\`@RGMC IT Bot help\`
-  Show this message.`;
 
 // Filler words stripped from "gumagana po ba yung <SITE>"
 const GUMAGANA_FILLERS = new Set(['po', 'ba', 'yung']);
@@ -181,9 +147,9 @@ export class RgmcItBot extends TeamsActivityHandler {
 
         if (!site) {
           await context.sendActivity(pick([
-            `Gumagana... ano? 😅 Kailangan mo ng site name!\nExample: \`@RGMC IT Bot gumagana po ba yung payroll\``,
-            `Uy, anung site ang tinatanong mo? 🤔 Di ko mahulaan!\nExample: \`@RGMC IT Bot gumagana po ba yung payroll\``,
-            `"Gumagana po ba yung"... yung ano? 😂 Sabihin mo na kung aling site!\nExample: \`@RGMC IT Bot gumagana po ba yung payroll\``,
+            `Gumagana... ano? 😅 Kailangan mo ng site name!\nExample: \`@RGMC IT Bot gumagana po ba yung portal?\``,
+            `Uy, anung site ang tinatanong mo? 🤔 Di ko mahulaan!\nExample: \`@RGMC IT Bot gumagana po ba yung portal?\``,
+            `"Gumagana po ba yung"... yung ano? 😂 Sabihin mo na kung aling site!\nExample: \`@RGMC IT Bot gumagana po ba yung portal?\``,
           ]));
           return;
         }
@@ -233,9 +199,9 @@ export class RgmcItBot extends TeamsActivityHandler {
 
         if (!system) {
           await context.sendActivity(pick([
-            `Anong site ng... ano? 😅 Kailangan mo ng system name!\nExample: \`@RGMC IT Bot anong site po yung payroll\``,
-            `Uy, anung system ang hinahanap mo? 🤔 Di ko mahulaan!\nExample: \`@RGMC IT Bot anong site po yung payroll\``,
-            `"Anong site po yung"... yung ano? 😂 I-specify mo na!\nExample: \`@RGMC IT Bot anong site po yung payroll\``,
+            `Anong site ng... ano? 😅 Kailangan mo ng system name!\nExample: \`@RGMC IT Bot anong site po yung creatives?\``,
+            `Uy, anung system ang hinahanap mo? 🤔 Di ko mahulaan!\nExample: \`@RGMC IT Bot anong site po yung portal?\``,
+            `"Anong site po yung"... yung ano? 😂 I-specify mo na!\nExample: \`@RGMC IT Bot anong site po yung portal?\``,
           ]));
           return;
         }
@@ -267,17 +233,18 @@ export class RgmcItBot extends TeamsActivityHandler {
       }
 
       case 'help':
-        await context.sendActivity(HELP_TEXT);
+        await context.sendActivity(MessageFactory.attachment(buildHelpCard()));
         break;
 
       default: {
         const unknownCmd = command || '(walang sinabi)';
         await context.sendActivity(pick([
-          `Huh? 🤔 Hindi ko gets ang \`${unknownCmd}\`. Eto ang mga alam ko:\n\n${HELP_TEXT}`,
-          `\`${unknownCmd}\`? Saang mundo galing yan? 😂 Hindi ko kilala yun. Eto ang commands ko:\n\n${HELP_TEXT}`,
-          `Ay, hindi ako basta-basta — wala akong alam na \`${unknownCmd}\`. 😅 Baka ito ang hinahanap mo:\n\n${HELP_TEXT}`,
-          `Hmmmm... \`${unknownCmd}\`... hindi sa akin yan. 🤷 Eto ang actual na commands ko:\n\n${HELP_TEXT}`,
+          `Huh? 🤔 Hindi ko gets ang \`${unknownCmd}\`. Eto ang mga alam ko:`,
+          `\`${unknownCmd}\`? Saang mundo galing yan? 😂 Hindi ko kilala yun. Eto ang commands ko:`,
+          `Ay, hindi ako basta-basta — wala akong alam na \`${unknownCmd}\`. 😅 Baka ito ang hinahanap mo:`,
+          `Hmmmm... \`${unknownCmd}\`... hindi sa akin yan. 🤷 Eto ang actual na commands ko:`,
         ]));
+        await context.sendActivity(MessageFactory.attachment(buildHelpCard()));
         break;
       }
     }
