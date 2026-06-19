@@ -24,7 +24,7 @@ export async function getTicketByNumber(ticketNumber: string): Promise<Ticket | 
 export async function findSystemsByTag(site: string): Promise<System[]> {
   const { data, error } = await db
     .from('systems')
-    .select('id, name, tags, primary_url, backup_url, category')
+    .select('id, name, tags, primary_url, primary_label, backup_url, backup_label, category')
     .not('tags', 'is', null);
   if (error || !data) return [];
   const needle = site.toLowerCase().trim();

@@ -73,7 +73,9 @@ export interface System {
   name: string;
   tags: string | null;
   primary_url: string | null;
+  primary_label: string | null;
   backup_url: string | null;
+  backup_label: string | null;
   category: string | null;
 }
 

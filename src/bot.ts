@@ -8,6 +8,7 @@ import {
 } from './services/channelService';
 import { buildTicketStatusCard } from './cards/ticketCard';
 import { buildSiteStatusCard } from './cards/siteStatusCard';
+import { buildSiteInfoCard } from './cards/siteInfoCard';
 import { askGpt } from './services/gptService';
 import { pingSystem } from './services/pingService';
 import { PingResult } from './types';
@@ -15,6 +16,13 @@ import { PingResult } from './types';
 // Picks a random item from an array so responses feel less robotic
 function pick<T>(options: T[]): T {
   return options[Math.floor(Math.random() * options.length)];
+}
+
+// Strip trailing question marks then leading filler words from args
+function extractArg(args: string[], fillers: Set<string>): string {
+  const remaining = [...args];
+  while (remaining.length && fillers.has(remaining[0])) remaining.shift();
+  return remaining.join(' ').trim().replace(/\?+$/, '');
 }
 
 const HELP_TEXT = `🤖 **RGMC IT Bot — Commands**
@@ -46,11 +54,17 @@ const HELP_TEXT = `🤖 **RGMC IT Bot — Commands**
 \`@RGMC IT Bot gumagana po ba yung <SITE>\`
   Check if a site is up (e.g. \`gumagana po ba yung payroll\`).
 
+\`@RGMC IT Bot anong site po yung <SYSTEM>\`
+  Get the URL(s) of a system (e.g. \`anong site po yung payroll\`).
+
 \`@RGMC IT Bot help\`
   Show this message.`;
 
-// Words to strip from the start of args for the "gumagana" command
-const FILLER_WORDS = new Set(['po', 'ba', 'yung']);
+// Filler words stripped from "gumagana po ba yung <SITE>"
+const GUMAGANA_FILLERS = new Set(['po', 'ba', 'yung']);
+
+// Filler words stripped from "anong site po yung <SYSTEM>"
+const ANONG_FILLERS = new Set(['site', 'po', 'yung']);
 
 export class RgmcItBot extends TeamsActivityHandler {
   constructor() {
@@ -163,12 +177,7 @@ export class RgmcItBot extends TeamsActivityHandler {
       }
 
       case 'gumagana': {
-        // Strip leading filler words: "po", "ba", "yung"
-        const remaining = [...args];
-        while (remaining.length && FILLER_WORDS.has(remaining[0])) {
-          remaining.shift();
-        }
-        const site = remaining.join(' ').trim();
+        const site = extractArg(args, GUMAGANA_FILLERS);
 
         if (!site) {
           await context.sendActivity(pick([
@@ -216,6 +225,44 @@ export class RgmcItBot extends TeamsActivityHandler {
         });
 
         await context.sendActivity(MessageFactory.attachment(buildSiteStatusCard(site, results)));
+        break;
+      }
+
+      case 'anong': {
+        const system = extractArg(args, ANONG_FILLERS);
+
+        if (!system) {
+          await context.sendActivity(pick([
+            `Anong site ng... ano? 😅 Kailangan mo ng system name!\nExample: \`@RGMC IT Bot anong site po yung payroll\``,
+            `Uy, anung system ang hinahanap mo? 🤔 Di ko mahulaan!\nExample: \`@RGMC IT Bot anong site po yung payroll\``,
+            `"Anong site po yung"... yung ano? 😂 I-specify mo na!\nExample: \`@RGMC IT Bot anong site po yung payroll\``,
+          ]));
+          return;
+        }
+
+        await context.sendActivities([{ type: 'typing' }]);
+
+        let systems;
+        try {
+          systems = await findSystemsByTag(system);
+        } catch (err) {
+          await context.sendActivity(pick([
+            `Ay, hindi ko ma-access ang database ngayon. 😬 May problema sa Supabase. Try ulit mamaya!`,
+            `Nag-error habang hinahanap ko ang systems. 😅 Baka may connectivity issue. Try again!`,
+          ]));
+          return;
+        }
+
+        if (systems.length === 0) {
+          await context.sendActivity(pick([
+            `Hm, wala akong nahanap na system na may tag na \`${system}\`. 🔍 Baka typo? O hindi pa na-tag sa systems table?`,
+            `Hindi ko kilala ang \`${system}\`. 🤷 Wala sa aming listahan ng tags. Check the systems table!`,
+            `\`${system}\`? First time ko marinig yan. 😅 Sigurado kang tama ang spelling? Check the tags column sa systems.`,
+          ]));
+          return;
+        }
+
+        await context.sendActivity(MessageFactory.attachment(buildSiteInfoCard(system, systems)));
         break;
       }
 
