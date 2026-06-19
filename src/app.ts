@@ -75,7 +75,16 @@ function registerRoutes(): void {
       MicrosoftAppType: config.tenantId ? 'SingleTenant' : 'MultiTenant',
     });
 
-    const botAuth = new ConfigurationBotFrameworkAuthentication({}, credFactory);
+    // Pass native fetch (Node 22 / undici) as the 4th arg so botframework-connector
+    // uses it instead of the bundled node-fetch v2, which throws "Premature close"
+    // on gzip-encoded responses from login.botframework.com in Cloud Run.
+    const botAuth = new ConfigurationBotFrameworkAuthentication(
+      {},
+      credFactory,
+      undefined,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (input: any, init?: any) => fetch(input as string, init as RequestInit),
+    );
     const adapter = new CloudAdapter(botAuth);
 
     adapter.onTurnError = async (context: import('botbuilder').TurnContext, error: Error) => {
