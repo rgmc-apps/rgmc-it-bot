@@ -20,6 +20,7 @@ export const config = {
   webhookApiKey: get('WEBHOOK_API_KEY'),
 
   gatewayBaseUrl: process.env.GATEWAY_BASE_URL || '',
+  gatewayAdminUsername: process.env.GATEWAY_ADMIN_USERNAME || '',
   botBaseUrl: process.env.BOT_BASE_URL || '',
 
   gptApiKey: get('GPT_API_KEY'),

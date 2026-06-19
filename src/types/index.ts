@@ -67,3 +67,22 @@ export interface NotifyTicketPayload {
   ticket: Ticket;
   changes?: TicketChanges;
 }
+
+export interface System {
+  id: string;
+  name: string;
+  tags: string | null;
+  primary_url: string | null;
+  backup_url: string | null;
+  category: string | null;
+}
+
+export interface PingResult {
+  id: string;
+  name: string;
+  url?: string;
+  status: 'ok' | 'error' | 'timeout' | 'down' | 'no_url';
+  http_status?: number;
+  latency_ms?: number;
+  error?: string;
+}

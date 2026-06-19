@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { ConversationReference } from 'botbuilder';
 import { config } from '../config';
-import { BotSubscription, RegistrationCode, Ticket } from '../types';
+import { BotSubscription, RegistrationCode, System, Ticket } from '../types';
 
 export const db = createClient(config.supabaseUrl, config.supabaseKey);
 
@@ -17,6 +17,21 @@ export async function getTicketByNumber(ticketNumber: string): Promise<Ticket | 
     .single();
   if (error || !data) return null;
   return data as Ticket;
+}
+
+// ─── Systems ──────────────────────────────────────────────────────────────────
+
+export async function findSystemsByTag(site: string): Promise<System[]> {
+  const { data, error } = await db
+    .from('systems')
+    .select('id, name, tags, primary_url, backup_url, category')
+    .not('tags', 'is', null);
+  if (error || !data) return [];
+  const needle = site.toLowerCase().trim();
+  return (data as System[]).filter(s => {
+    if (!s.tags) return false;
+    return s.tags.split(',').map(t => t.trim().toLowerCase()).includes(needle);
+  });
 }
 
 // ─── Subscriptions ────────────────────────────────────────────────────────────
