@@ -1,6 +1,36 @@
 import express, { Request, Response } from 'express';
 import path from 'path';
 
+// ── node-fetch shim ───────────────────────────────────────────────────────────
+// botframework-connector's OpenIdMetadata (openIdMetadata.js) directly imports
+// node-fetch v2 and uses it to fetch JWT signing keys from login.botframework.com.
+// In Cloud Run on Node 22, node-fetch v2 dies with "Premature close at Gunzip"
+// because it can't handle the gzip-encoded response correctly.
+//
+// We intercept require('node-fetch') before registerRoutes() loads botbuilder,
+// and return Node 22's native fetch (undici) instead. The two calls in
+// openIdMetadata.js only use res.ok + res.json(), which are standard Fetch API,
+// so the substitution is safe.
+//
+// This must run BEFORE the lazy require('botbuilder') inside registerRoutes().
+// It works because all botbuilder modules are loaded lazily, not at import time.
+if (typeof globalThis.fetch === 'function') {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const Module = require('module') as { _load: (...args: any[]) => any };
+  const _orig = Module._load;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  Module._load = function nodeFetchShim(id: string, ...rest: any[]) {
+    if (id === 'node-fetch') {
+      const f = globalThis.fetch.bind(globalThis);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return Object.assign(f, { default: f }) as any;
+    }
+    return _orig.call(this, id, ...rest);
+  };
+  console.log('[shim] node-fetch → native fetch (Node 22)');
+}
+
 const port = parseInt(process.env.PORT || '3978', 10);
 
 const app = express();
@@ -67,7 +97,6 @@ function registerRoutes(): void {
     const { createAdminRouter } = require('./routes/admin') as typeof import('./routes/admin');
     /* eslint-enable @typescript-eslint/no-var-requires */
 
-    // Bot Framework adapter
     const credFactory = new ConfigurationServiceClientCredentialFactory({
       MicrosoftAppId: config.botId,
       MicrosoftAppPassword: config.botPassword,
@@ -75,16 +104,7 @@ function registerRoutes(): void {
       MicrosoftAppType: config.tenantId ? 'SingleTenant' : 'MultiTenant',
     });
 
-    // Pass native fetch (Node 22 / undici) as the 4th arg so botframework-connector
-    // uses it instead of the bundled node-fetch v2, which throws "Premature close"
-    // on gzip-encoded responses from login.botframework.com in Cloud Run.
-    const botAuth = new ConfigurationBotFrameworkAuthentication(
-      {},
-      credFactory,
-      undefined,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (input: any, init?: any) => fetch(input as string, init as RequestInit),
-    );
+    const botAuth = new ConfigurationBotFrameworkAuthentication({}, credFactory);
     const adapter = new CloudAdapter(botAuth);
 
     adapter.onTurnError = async (context: import('botbuilder').TurnContext, error: Error) => {
