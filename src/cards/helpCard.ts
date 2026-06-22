@@ -85,6 +85,14 @@ export function buildHelpCard(): Attachment {
         ],
       },
 
+      // ── 🟢 General ──────────────────────────────────────────────────────────
+      sectionHeader('🟢', 'GENERAL', 'good'),
+      cmdRow(
+        'vibe check',
+        'Check if the bot is alive and responding.',
+        'good',
+      ),
+
       // ── 📢 Channel ───────────────────────────────────────────────────────────
       sectionHeader('📢', 'CHANNEL', 'good'),
       cmdRow(

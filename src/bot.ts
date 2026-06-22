@@ -232,6 +232,25 @@ export class RgmcItBot extends TeamsActivityHandler {
         break;
       }
 
+      case 'vibe': {
+        if (args[0] !== 'check') {
+          await context.sendActivity(pick([
+            `Huh? 🤔 "vibe"... ano? Baka ibig mong sabihin ay \`vibe check\`?`,
+            `Vibe... lang? 😅 I-complete mo — \`@RGMC IT Bot vibe check\`!`,
+          ]));
+          break;
+        }
+        await context.sendActivity(pick([
+          `Nandito po! ✅ Buhay na buhay — walang error, walang drama. Laging handa para sa inyo! 💪`,
+          `Vibe? A-OK po! 🤖 Bot is up, systems are running, at ako ay naka-duty 24/7. Anong kailangan mo?`,
+          `Grabe, in-check mo pa ako? 😂 Eto o — very much alive and kicking! All systems go. 🚀`,
+          `Solid! 💯 Online, responsive, at laging may gana. Hindi ako basta-basta mapapagod. 😎`,
+          `Hoy, nandito pa rin ako! 👋 Di pa ako tinatanggal. Ready to serve, sir/ma'am! ✅`,
+          `Vibe check: PASSED. 🟢 Bot pulse — strong. Supabase — connected. Ako — handa. Let's go! 💪`,
+        ]));
+        break;
+      }
+
       case 'help':
         await context.sendActivity(MessageFactory.attachment(buildHelpCard()));
         break;

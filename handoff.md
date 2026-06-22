@@ -6,9 +6,11 @@ A fully operational MS Teams bot (RGMC IT Bot) deployed on Google Cloud Run that
 - Allows channels to self-register with a code (`register <CODE>`)
 - Allows users to query ticket status by number (`ticket <NUMBER>`)
 - Allows users to ask IT-related questions answered by ChatGPT (`ask <QUESTION>`)
+- Allows users to check if a site is up (`gumagana po ba yung <SITE>`) — pings via gateway
+- Allows users to get a system's URL (`anong site po yung <SYSTEM>`) — shows primary/backup URLs
+- Has a playful Taglish personality with randomized error responses
 - Exposes webhook endpoints for the `rgmc-gateway` project to call when tickets change
 - Has a `/health` endpoint that checks bot credentials + Supabase connectivity
-- "View Ticket" buttons in notification cards deep-link into the `rgmc-gateway` admin panel
 
 **Deployed URL:** `https://rgmc-it-bot-935246372408.asia-southeast1.run.app`
 **Gateway URL:** `https://rgmc-gateway-935246372408.asia-southeast1.run.app`
@@ -18,96 +20,106 @@ A fully operational MS Teams bot (RGMC IT Bot) deployed on Google Cloud Run that
 
 ## Current State
 
-### rgmc-it-bot (C:\claude\rgmc-it-bot)
-| Feature | Status |
-|---|---|
-| Bot responds to @mentions | **Unconfirmed** — bot was not responding earlier; BOT_ID/BOT_PASSWORD confirmed correct but root cause not fully resolved |
-| `/health` endpoint | Working — returns `bot_credentials` + `supabase` checks. Last confirmed degraded due to Supabase WebSocket (fixed by Node 22 upgrade) |
-| `/ping` endpoint | Working — zero-dependency liveness check |
-| `register / unregister` commands | Implemented, not tested end-to-end in Teams |
-| `ticket <NUMBER>` command | Implemented, not tested end-to-end |
-| `ask <QUESTION>` command | Implemented — uses OpenAI streaming, sends with `textFormat: 'markdown'`. Last known issue: response was cut at first line — fix applied (`msg.textFormat = 'markdown'`), **not yet confirmed working** |
-| View Ticket card button | Fixed — URL was double-slash + `#id` fragment; now `${gatewayBaseUrl}/admin/issues/${ticket.id}` |
-| Cloud Run deployment | Last successful deploy was broken (revision 00012 failed). Fix applied (Node 22, lazy health route imports). **Needs redeploy to confirm** |
+### rgmc-it-bot — needs redeployment
 
-### rgmc-gateway (C:\claude\rgmc-gateway)
+All code is fully implemented and TypeScript compiles clean. The latest commit (`cfc33c1`) has NOT been deployed to Cloud Run yet. The previously deployed revision was broken by the auth fix (`48a12cf`), which was then superseded by a deeper fix (`21fc020`). The current code should work — but needs a fresh `gcloud run deploy` to be live.
+
 | Feature | Status |
 |---|---|
-| `GET /admin/issues/<id>` route | **Added this session** — renders `admin.html` with `open_issue_id`, auto-opens issue modal via `window._OPEN_ISSUE_ID` |
-| Deep-link auto-open modal | Implemented in `admin.js` — switches to Issues tab, loads all issues, opens modal. **Not yet deployed/tested** |
+| node-fetch shim (auth fix) | **Implemented, NOT deployed** — see `src/app.ts` lines 17–32 |
+| `register / unregister / configure / status` | Implemented, not tested end-to-end |
+| `ticket <NUMBER>` | Implemented, not tested end-to-end |
+| `ask <QUESTION>` | Implemented (OpenAI streaming), not tested end-to-end |
+| `gumagana po ba yung <SITE>` | Implemented — pings gateway, renders site status card |
+| `anong site po yung <SYSTEM>` | Implemented — shows primary/backup URLs for a system |
+| `help` command | Now renders as a styled Adaptive Card (not plain text) |
+| Adaptive Card designs | All 4 cards redesigned: ticket created, ticket updated, ticket status, site status, site info, help |
+| Bot personality (Taglish errors) | Implemented — `pick()` helper, randomized messages on every error |
+| Cloud Run deployment | **NEEDS REDEPLOY** — last successful deploy predates the auth fix |
+
+### Auth error (root cause found and fixed)
+
+The bot was returning 401 on all `/api/messages` requests. Two-stage fix applied:
+
+1. **First attempt** (`48a12cf`): passed native `fetch` as `customFetchImpl` 4th arg to `ConfigurationBotFrameworkAuthentication` — this was the WRONG code path. `JwtTokenExtractor` uses `OpenIdMetadata` which imports `node-fetch` directly and never touches `customFetchImpl`.
+
+2. **Working fix** (`21fc020`): intercepts `require('node-fetch')` via `Module._load` override at the very top of `app.ts` module body, BEFORE `registerRoutes()` loads botbuilder. Returns `globalThis.fetch` (Node 22 native, undici-backed) instead of node-fetch v2. This fixes the `Premature close at Gunzip` error in `openIdMetadata.js` lines 83 and 86.
+
+The shim prints `[shim] node-fetch → native fetch (Node 22)` to logs on startup — look for this after deploy to confirm it's active.
 
 ---
 
 ## Files Actively Being Edited
 
 ### rgmc-it-bot
-- `src/app.ts` — Major restructure: `/ping` and `/health` registered before `app.listen()` using lazy `require()` inside handlers to avoid crashing at startup. `registerRoutes()` no longer registers health. Routes logged to console on startup.
-- `src/routes/health.ts` — Now imports `{ db }` from supabase service and queries `bot_subscriptions`. Still exists but is no longer used (health logic was inlined into `app.ts`). Can be deleted or kept for reference.
-- `src/services/supabase.ts` — `db` client changed from `const` to `export const` (line 6) so health check and other callers can import it directly.
-- `src/services/gptService.ts` — **New file.** Lazy singleton OpenAI client. Uses `stream: true`, collects all chunks with `for await` before returning full string.
-- `src/bot.ts` — Added `ask` command case (lines 111–127). `ask` sends response with `MessageFactory.text(answer)` + `msg.textFormat = 'markdown'`. Updated HELP_TEXT to include `ask` command.
-- `src/config.ts` — Added `gptApiKey`, `gptVersion` (default `gpt-4o`), `gptLimit` (default `1000`) at lines 25–27.
-- `src/cards/ticketCard.ts` — `viewTicketAction()` line 37: fixed URL from `${gatewayBaseUrl}/admin/issues#${ticket.id}` to `${gatewayBaseUrl.replace(/\/$/, '')}/admin/issues/${ticket.id}`.
-- `.env.example` — Added OpenAI section with `GPT_API_KEY`, `GPT_VERSION`, `GPT_LIMIT`.
-- `Dockerfile` — Upgraded from `node:20-alpine` to `node:22-alpine` (both builder and runtime stages) to fix Supabase WebSocket error.
-- `package.json` — Added `openai: ^6.44.0` dependency; `@types/node` bumped to `^22.0.0`.
-
-### rgmc-gateway
-- `controllers/issues.py` — Added `render_template` import; added `GET /admin/issues/<issue_id>` route at lines 235–237.
-- `templates/admin.html` — Added `{% if open_issue_id %}<script>window._OPEN_ISSUE_ID = {{ open_issue_id | tojson }};</script>{% endif %}` before `admin.js` script tag (lines 820–822).
-- `static/admin.js` — Two changes:
-  1. Line 156: On `DOMContentLoaded`, if `window._OPEN_ISSUE_ID` is set, calls `switchTab('issues')` instead of `loadRequests('pending')`.
-  2. Lines 934–942: Inside `loadIssues()`, after `_issuesCache = all`, checks for `window._OPEN_ISSUE_ID`, switches status filter to `'all'`, then calls `openIssueModal(targetId)` via `setTimeout(..., 0)`.
+- `src/app.ts` — Added `Module._load` shim at top of module body (lines 17–32) to replace node-fetch with native fetch before botbuilder loads. Also reverted the `customFetchImpl` workaround (no longer needed). Clean compile.
+- `src/bot.ts` — Full rewrite this session: added `gumagana` command, `anong` command, `pick()` helper, `extractArg()` helper, `GUMAGANA_FILLERS` / `ANONG_FILLERS` sets. Playful Taglish error messages on all commands. Help now uses `buildHelpCard()` card. Default unknown-command case sends text first then card separately.
+- `src/cards/ticketCard.ts` — Fully redesigned: bold bleed headers with large ticket numbers, priority color strips, 3-column info grids, status strip (colored by status), `fontType` improvements. All three functions redesigned.
+- `src/cards/siteStatusCard.ts` — Fully redesigned: emphasis header + overall status strip, per-system rows with left (name/URL) and right (status/latency) columns, latency speed label (⚡🐇🐢), bleed rows.
+- `src/cards/siteInfoCard.ts` — **New file.** Shows primary/backup URLs for a system. Single-system: full detail with action buttons. Multiple systems: stacked containers with separators, no buttons.
+- `src/cards/helpCard.ts` — **New file.** Adaptive Card command reference: 4 color-coded sections (📢 CHANNEL=green, 🎫 TICKETS=amber, 🌐 SITES=blue, 💬 AI=red), monospace command names, subtle descriptions, footer tip.
+- `src/services/pingService.ts` — **New file.** Calls `GET {GATEWAY_BASE_URL}/api/admin/systems/{id}/ping` with `X-Gateway-Username` header. Uses `AbortSignal.timeout(12000)`.
+- `src/services/gptService.ts` — **New file** (from previous session). OpenAI streaming, lazy singleton client, returns full assembled string.
+- `src/services/supabase.ts` — Added `findSystemsByTag(site)` — fetches all systems with non-null tags, filters in-process by exact tag match (comma-separated). Updated select to include `primary_label`, `backup_label`.
+- `src/config.ts` — Added `gptApiKey`, `gptVersion`, `gptLimit`, `gatewayAdminUsername`.
+- `src/types/index.ts` — Added `System` interface (with `primary_label`, `backup_label`), `PingResult` interface.
+- `.env.example` — Added `GPT_API_KEY`, `GPT_VERSION`, `GPT_LIMIT`, `GATEWAY_ADMIN_USERNAME`.
+- `Dockerfile` — Node 20 → Node 22 (both builder and runtime stages).
+- `package.json` — Added `openai: ^6.44.0`.
 
 ---
 
 ## Failed Attempts
 
-- **What was tried**: Adding `import { createHealthRouter } from './routes/health'` as a top-level import in `app.ts` — **Why it failed**: This eagerly loaded `supabase.ts` at module startup which called `createClient()` before `app.listen()`. On Cloud Run, if any env var was invalid/empty, the process crashed before binding to port 8080, causing the "container failed to start" error on revision 00012.
+- **What was tried**: Passing native fetch as `customFetchImpl` (4th arg) to `ConfigurationBotFrameworkAuthentication` — **Why it failed**: This parameter only affects outbound connector HTTP calls. The inbound JWT validation path goes through `JwtTokenExtractor` → `OpenIdMetadata` → direct `require('node-fetch')` call. `customFetchImpl` is never forwarded there.
 
-- **What was tried**: Registering `/health` inside `registerRoutes()` try/catch block — **Why it failed**: If anything inside `registerRoutes()` threw (e.g., bad bot credentials), the health route was never registered, returning `Cannot GET /health`.
+- **What was tried**: The original `FetchError: Premature close at Gunzip` fix using `customFetchImpl` alone — **Why it failed**: The gzip error disappeared (so the custom fetch was partially working for some paths), but `AuthenticationError: Signing Key could not be retrieved` remained because `openIdMetadata.js:83-86` still used node-fetch v2.
 
-- **What was tried**: Health check creating a new `createClient()` instance on each request — **Why it failed**: Supabase's Realtime client throws synchronously on Node.js 20 (`"Node.js 20 detected without native WebSocket support"`) because there's no native `WebSocket` global. The `catch` block captured it as an error.
+- **What was tried**: Node 20 in Dockerfile — **Why it failed**: Supabase Realtime client throws synchronously `"Node.js 20 detected without native WebSocket support"` at module load time, crashing the process before it can bind port 8080.
 
-- **What was tried**: Using `context.sendActivity(answer)` (plain string) for GPT response — **Why it failed**: Teams truncates plain text bot messages at the first newline. Response appeared cut at the first line.
+- **What was tried**: Top-level import of health route (`import { createHealthRouter }`) in `app.ts` — **Why it failed**: Eagerly loaded Supabase at module startup; if any env var was invalid, the process crashed before binding port 8080, causing Cloud Run startup probe failure.
 
-- **What was tried**: View Ticket URL constructed as `${gatewayBaseUrl}/admin/issues#${ticket.id}` — **Why it failed**: Double slash when `gatewayBaseUrl` had trailing slash; `#` is a fragment anchor not a path, so the gateway received `/admin/issues` with no ID and returned 404.
+- **What was tried**: Registering `/health` inside `registerRoutes()` try/catch — **Why it failed**: If bot credentials failed, the whole `registerRoutes()` threw and health was never registered, returning `Cannot GET /health`.
 
 ---
 
 ## Next Step
 
-**Deploy both projects and test the `ask` command end-to-end.**
+**Deploy the bot to Cloud Run.** All code is ready and compiles clean. Run from `C:\claude\rgmc-it-bot`:
 
-1. Deploy `rgmc-it-bot` to Cloud Run:
-   ```
-   gcloud run deploy rgmc-it-bot --source . --region asia-southeast1
-   ```
-   Then set the three new Cloud Run env vars if not already set:
-   - `GPT_API_KEY` = your OpenAI key
-   - `GPT_VERSION` = `gpt-4o`
-   - `GPT_LIMIT` = `1000`
+```
+gcloud run deploy rgmc-it-bot --source . --region asia-southeast1
+```
 
-2. Hit `https://rgmc-it-bot-935246372408.asia-southeast1.run.app/health` — both `bot_credentials` and `supabase` should be `"ok"`.
+Then set any missing env vars (if not already set on the Cloud Run service):
+```
+gcloud run services update rgmc-it-bot --region asia-southeast1 \
+  --set-env-vars GPT_API_KEY=<openai-key>,GPT_VERSION=gpt-4o,GPT_LIMIT=1000,GATEWAY_ADMIN_USERNAME=<admin-username>
+```
 
-3. In Teams, @mention the bot and try: `@RGMC IT Bot ask what is a VPN?` — verify full multi-line response appears.
-
-4. Deploy `rgmc-gateway` and test the View Ticket deep-link by clicking the button on a notification card.
-
-5. If the bot still doesn't respond to @mentions after the health check passes, check Cloud Run logs for `POST /api/messages` hits. If no hits appear, the messaging endpoint in Azure Bot Service Configuration is wrong or the bot is not installed in the channel.
+After deploy:
+1. Check logs for `[shim] node-fetch → native fetch (Node 22)` — confirms the auth fix is active
+2. Hit `/health` — both `bot_credentials` and `supabase` should be `"ok"`
+3. In Teams, test `@RGMC IT Bot help` — should render the styled Adaptive Card
+4. Test `@RGMC IT Bot gumagana po ba yung <tag>` with a known tag from the systems table
+5. Test `@RGMC IT Bot anong site po yung <tag>` with the same tag
 
 ---
 
 ## Context & Gotchas
 
-- **No `.env` file exists** in `C:\claude\rgmc-it-bot\`. All env vars must be set in Cloud Run environment variables directly. There is only a `.env.example`.
-- **Manifest bot ID** (`32374f3f-e2a8-4bb0-98e9-047329bbb720`) must exactly match `BOT_ID` env var in Cloud Run. These were confirmed correct this session.
-- **Azure Bot messaging endpoint** must be set to `https://rgmc-it-bot-935246372408.asia-southeast1.run.app/api/messages` — the full path including `/api/messages` is required.
-- **`src/routes/health.ts`** still exists and exports `createHealthRouter` but is no longer imported anywhere. The actual health logic lives inline in `app.ts`. This file is dead code — safe to delete or ignore.
-- **Cloud Run sets `PORT=8080`** — the app reads `process.env.PORT || '3978'` so this works correctly.
-- **Supabase table name** is `bot_subscriptions` (not `channel_subscriptions` — an early mistake was using the wrong table name in the health check).
-- **Teams bot installation**: the bot must be explicitly installed into each Team via Apps before it can receive @mentions. Publishing the manifest package alone is not enough.
-- **`ask` command is case-sensitive** on the command extraction — `text.toLowerCase().split()` is used so `Ask` or `ASK` will not match. This is intentional per the existing pattern.
-- **`rgmc-gateway` deep-link requires admin login**: `GET /admin/issues/<id>` renders `admin.html` which checks `localStorage` for a session with `isAdmin: true` and redirects to `/` if not found. Users clicking the card must already be logged in as admin on the gateway.
-- **GPT_LIMIT default is 1000 tokens** — for complex IT questions this may still truncate the response. Consider increasing to 2000 in Cloud Run if responses feel cut short.
-- **OpenAI streaming** is used in `gptService.ts` — this keeps the HTTP connection to OpenAI alive during generation and prevents Node.js request timeouts. The full response is collected before being sent to Teams.
+- **No `.env` file** in `C:\claude\rgmc-it-bot\`. All env vars must be set in Cloud Run directly. Only `.env.example` exists.
+- **`GATEWAY_ADMIN_USERNAME`** must be a username that has `is_admin = true` in the gateway's `users` table. The ping endpoint (`GET /api/admin/systems/<id>/ping`) uses `X-Gateway-Username` header for auth.
+- **`tags` column in `systems` table** is plain text, comma-separated (e.g. `"payroll,hr"`). The bot fetches all systems with non-null tags and filters in-process. Matching is case-insensitive exact match against each tag token.
+- **Bot manifest ID** (`32374f3f-e2a8-4bb0-98e9-047329bbb720`) must exactly match `BOT_ID` env var in Cloud Run.
+- **Azure Bot messaging endpoint** must be `https://rgmc-it-bot-935246372408.asia-southeast1.run.app/api/messages` — the `/api/messages` path is required.
+- **The `gumagana` command** strips leading filler words `po`, `ba`, `yung` and trailing `?`. The `anong` command strips `site`, `po`, `yung` and trailing `?`. Both use `extractArg()` in `bot.ts:23–27`.
+- **`src/routes/health.ts`** still exists as a dead file — it was replaced by inline health logic in `app.ts`. Safe to ignore or delete.
+- **Cloud Run sets `PORT=8080`** — app reads `process.env.PORT || '3978'`, works correctly.
+- **Supabase table name** is `bot_subscriptions` (not `channel_subscriptions`).
+- **Teams bot installation**: the bot must be explicitly installed into each Team via Apps before it can receive @mentions. Registering the manifest alone is not enough.
+- **`ask` command is case-insensitive** — `text.toLowerCase().split()` is used, so `Ask` and `ASK` both work.
+- **OpenAI streaming** is used in `gptService.ts` — full response is collected before sending to Teams, preventing Node.js request timeouts.
+- **`anong site po yung`**: single-system result shows Open Primary / Open Backup action buttons; multiple systems show URL as text only (no buttons to avoid clutter).
+- **Help card** (`helpCard.ts`) replaced the old `HELP_TEXT` string constant entirely. `buildHelpCard()` returns an `Attachment`. Unknown command case sends two activities: playful text first, then the card.
+- **`rgmc-gateway` deep-link** (`GET /admin/issues/<id>`) requires admin login on the gateway — users clicking "View Ticket" must already be logged in as admin.
