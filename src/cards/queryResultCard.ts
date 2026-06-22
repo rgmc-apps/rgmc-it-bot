@@ -2,7 +2,7 @@ import { Attachment, CardFactory } from 'botbuilder';
 
 const MAX_PREVIEW_ROWS = 5;
 const MAX_PREVIEW_COLS = 5;
-const MAX_TOTAL_ROWS   = 200;
+const MAX_TOTAL_ROWS   = 25;  // Teams Adaptive Card payload limit ~28KB; each row ~650B
 
 export type QuerySource  = 'bigquery' | 'sbic';
 export type QueryVariant = 'value' | 'latest';
@@ -132,7 +132,7 @@ export function buildQueryResultCard(
       items: [{
         type: 'TextBlock',
         text: total > MAX_TOTAL_ROWS
-          ? `✅  ${total} rows found · showing first ${MAX_TOTAL_ROWS}`
+          ? `✅  ${total} rows found · showing first ${MAX_TOTAL_ROWS} (Teams card limit)`
           : `✅  ${total} row${total !== 1 ? 's' : ''} found`,
         size: 'Small', weight: 'Bolder', spacing: 'None',
       }],
