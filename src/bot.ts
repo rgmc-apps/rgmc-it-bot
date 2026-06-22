@@ -26,6 +26,22 @@ function extractArg(args: string[], fillers: Set<string>): string {
   return remaining.join(' ').trim().replace(/\?+$/, '');
 }
 
+// Split long text into chunks without cutting mid-word, for Teams message limits
+function chunkText(text: string, maxLen = 3800): string[] {
+  if (text.length <= maxLen) return [text];
+  const chunks: string[] = [];
+  let remaining = text;
+  while (remaining.length > maxLen) {
+    let cut = remaining.lastIndexOf('\n', maxLen);
+    if (cut <= 0) cut = remaining.lastIndexOf(' ', maxLen);
+    if (cut <= 0) cut = maxLen;
+    chunks.push(remaining.slice(0, cut).trimEnd());
+    remaining = remaining.slice(cut).trimStart();
+  }
+  if (remaining) chunks.push(remaining);
+  return chunks;
+}
+
 // Filler words stripped from "gumagana po ba yung <SITE>"
 const GUMAGANA_FILLERS = new Set(['po', 'ba', 'yung']);
 
@@ -129,9 +145,13 @@ export class RgmcItBot extends TeamsActivityHandler {
         await context.sendActivities([{ type: 'typing' }]);
         try {
           const answer = await askGpt(question);
-          const msg = MessageFactory.text(answer);
-          msg.textFormat = 'markdown';
-          await context.sendActivity(msg);
+          const chunks = chunkText(answer);
+          for (let i = 0; i < chunks.length; i++) {
+            const label = chunks.length > 1 ? `*(${i + 1}/${chunks.length})*\n\n` : '';
+            const msg = MessageFactory.text(label + chunks[i]);
+            msg.textFormat = 'markdown';
+            await context.sendActivity(msg);
+          }
         } catch (err) {
           await context.sendActivity(pick([
             `Ay, hindi sumagot si AI ngayon. 😬 Baka busy siya. Try mo ulit mamaya!`,

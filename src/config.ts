@@ -25,5 +25,5 @@ export const config = {
 
   gptApiKey: get('GPT_API_KEY'),
   gptVersion: process.env.GPT_VERSION || 'gpt-4o',
-  gptLimit: parseInt(process.env.GPT_LIMIT || '1000', 10),
+  gptLimit: parseInt(process.env.GPT_LIMIT || '4096', 10),
 };
