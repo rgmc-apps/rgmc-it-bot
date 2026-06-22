@@ -22,12 +22,14 @@ function cell(val: unknown, maxLen = 22): string {
   return s.length > maxLen ? s.slice(0, maxLen - 1) + '…' : s;
 }
 
-function colSet(cols: string[], row: Record<string, unknown>, id?: string, hidden = false) {
-  return {
-    type:      'ColumnSet',
-    id,
-    isVisible: !hidden,
-    spacing:   'None' as const,
+function colSet(
+  cols: string[],
+  row: Record<string, unknown>,
+  opts: { id?: string; hidden?: boolean; separator?: boolean } = {},
+) {
+  const base: Record<string, unknown> = {
+    type:    'ColumnSet',
+    spacing: 'None' as const,
     columns: cols.map(c => ({
       type:  'Column',
       width: 'stretch',
@@ -41,6 +43,10 @@ function colSet(cols: string[], row: Record<string, unknown>, id?: string, hidde
       }],
     })),
   };
+  if (opts.id        !== undefined) base.id        = opts.id;
+  if (opts.hidden)                  base.isVisible  = false;
+  if (opts.separator)               base.separator  = true;
+  return base;
 }
 
 function headerSet(cols: string[]) {
@@ -133,11 +139,10 @@ export function buildQueryResultCard(
     },
     // Column header
     headerSet(previewCols),
-    { type: 'Separator' },
-    // First MAX_PREVIEW_ROWS always visible
-    ...visibleRows.map(r => colSet(previewCols, r)),
+    // First MAX_PREVIEW_ROWS always visible; separator drawn on the first row
+    ...visibleRows.map((r, i) => colSet(previewCols, r, { separator: i === 0 })),
     // Remaining rows — hidden by default, revealed by toggle
-    ...hiddenRows.map((r, i) => colSet(previewCols, r, `qr-row-${i}`, true)),
+    ...hiddenRows.map((r, i) => colSet(previewCols, r, { id: `qr-row-${i}`, hidden: true })),
   ];
 
   if (extraCols > 0) {
