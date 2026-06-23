@@ -1,5 +1,8 @@
 import { config } from '../config';
 
+export class GcpAccessError  extends Error { constructor(msg: string) { super(msg); this.name = 'GcpAccessError'; } }
+export class GcpNotFoundError extends Error { constructor(msg: string) { super(msg); this.name = 'GcpNotFoundError'; } }
+
 export interface QueryResult {
   rows: Record<string, unknown>[];
 }
@@ -15,7 +18,12 @@ async function gcpGet(path: string, params: Record<string, string | number>): Pr
   const res = await fetch(`${base}${path}?${qs}`);
   if (!res.ok) {
     const body = await res.text().catch(() => '');
-    throw new Error(`GCP API error ${res.status}: ${body || res.statusText}`);
+    let detail = '';
+    try { detail = JSON.parse(body)?.detail ?? body; } catch { detail = body; }
+
+    if (res.status === 403) throw new GcpAccessError(detail);
+    if (res.status === 404) throw new GcpNotFoundError(detail);
+    throw new Error(`GCP API error ${res.status}: ${detail || res.statusText}`);
   }
 
   const data: unknown = await res.json();

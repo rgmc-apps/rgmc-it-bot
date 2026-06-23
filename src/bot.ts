@@ -13,7 +13,7 @@ import { buildHelpCard } from './cards/helpCard';
 import { buildQueryResultCard } from './cards/queryResultCard';
 import { askGpt } from './services/gptService';
 import { pingSystem } from './services/pingService';
-import { bigqueryByValue, bigqueryLatest, dbByValue, dbLatest } from './services/gcpService';
+import { bigqueryByValue, bigqueryLatest, dbByValue, dbLatest, GcpAccessError, GcpNotFoundError } from './services/gcpService';
 import { PingResult } from './types';
 
 // Picks a random item from an array so responses feel less robotic
@@ -46,6 +46,14 @@ function chunkText(text: string, maxLen = 3800): string[] {
 
 // Filler words stripped from "gumagana po ba yung <SITE>"
 const GUMAGANA_FILLERS = new Set(['po', 'ba', 'yung']);
+
+function gcpErrorMessage(err: unknown): string {
+  if (err instanceof GcpNotFoundError)
+    return `❌ Database not found. Valid names: sbic, tradeportal, travelandexpense, creative, accounting, production, masterfile`;
+  if (err instanceof GcpAccessError)
+    return `🔒 Access denied — ang SQL login ay walang permission sa database na yan. Kailangan ng DBA na mag-grant ng access.`;
+  return `❌ GCP API error: ${(err as Error).message}`;
+}
 
 // Filler words stripped from "anong site po yung <SYSTEM>"
 const ANONG_FILLERS = new Set(['site', 'po', 'yung']);
@@ -300,7 +308,7 @@ export class RgmcItBot extends TeamsActivityHandler {
               result.rows,
             )));
           } catch (err) {
-            await context.sendActivity(`❌ GCP API error: ${(err as Error).message}`);
+            await context.sendActivity(gcpErrorMessage(err));
           }
         } else {
           // bigquery <table_name> <column_name> <column_value>
@@ -321,7 +329,7 @@ export class RgmcItBot extends TeamsActivityHandler {
               result.rows,
             )));
           } catch (err) {
-            await context.sendActivity(`❌ GCP API error: ${(err as Error).message}`);
+            await context.sendActivity(gcpErrorMessage(err));
           }
         }
         break;
@@ -349,7 +357,7 @@ export class RgmcItBot extends TeamsActivityHandler {
               result.rows,
             )));
           } catch (err) {
-            await context.sendActivity(`❌ GCP API error: ${(err as Error).message}`);
+            await context.sendActivity(gcpErrorMessage(err));
           }
         } else if (!isLatest && origArgs.length >= 3) {
           const [tableName, whereColumn, ...valueParts] = origArgs;
@@ -362,7 +370,7 @@ export class RgmcItBot extends TeamsActivityHandler {
               result.rows,
             )));
           } catch (err) {
-            await context.sendActivity(`❌ GCP API error: ${(err as Error).message}`);
+            await context.sendActivity(gcpErrorMessage(err));
           }
         } else {
           const unknownCmd = command || '(walang sinabi)';
