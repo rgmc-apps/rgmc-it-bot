@@ -13,7 +13,7 @@ import { buildHelpCard } from './cards/helpCard';
 import { buildQueryResultCard } from './cards/queryResultCard';
 import { askGpt } from './services/gptService';
 import { pingSystem } from './services/pingService';
-import { bigqueryByValue, bigqueryLatest, sbicByValue, sbicLatest } from './services/gcpService';
+import { bigqueryByValue, bigqueryLatest, dbByValue, dbLatest } from './services/gcpService';
 import { PingResult } from './types';
 
 // Picks a random item from an array so responses feel less robotic
@@ -327,68 +327,53 @@ export class RgmcItBot extends TeamsActivityHandler {
         break;
       }
 
-      case 'sbic': {
+      case 'help':
+        await context.sendActivity(MessageFactory.attachment(buildHelpCard()));
+        break;
+
+      default: {
+        // Any unknown command with enough args is treated as a generic DB query:
+        // <db_name> <table> <col> <val>  →  /{db_name}/by_table/value
+        // <db_name> latest <table> <datecol> [numrows]  →  /{db_name}/by_table/latest
+        const dbName   = command;
         const isLatest = args[0] === 'latest';
 
-        if (isLatest) {
-          // sbic latest <table_name> <date_column> [number_of_rows]
+        if (isLatest && origArgs.length >= 3) {
           const [, tableName, dateColumn, numRowsStr] = origArgs;
-          if (!tableName || !dateColumn) {
-            await context.sendActivity(pick([
-              `Para sa SBIC latest, kailangan ko ng table name at date column.\nExample: \`@RGMC IT Bot sbic latest my_table created_at\``,
-              `Kulang ang args! Gamitin: \`@RGMC IT Bot sbic latest <table> <date_column> [num_rows]\``,
-            ]));
-            return;
-          }
           const numberOfRows = numRowsStr ? parseInt(numRowsStr, 10) || 100 : 100;
           await context.sendActivities([{ type: 'typing' }]);
           try {
-            const result = await sbicLatest(tableName, dateColumn, numberOfRows);
+            const result = await dbLatest(dbName, tableName, dateColumn, numberOfRows);
             await context.sendActivity(MessageFactory.attachment(buildQueryResultCard(
-              { source: 'sbic', variant: 'latest', tableName, dateCol: dateColumn, numRows: numberOfRows },
+              { source: dbName, variant: 'latest', tableName, dateCol: dateColumn, numRows: numberOfRows },
+              result.rows,
+            )));
+          } catch (err) {
+            await context.sendActivity(`❌ GCP API error: ${(err as Error).message}`);
+          }
+        } else if (!isLatest && origArgs.length >= 3) {
+          const [tableName, whereColumn, ...valueParts] = origArgs;
+          const whereValue = valueParts.join(' ');
+          await context.sendActivities([{ type: 'typing' }]);
+          try {
+            const result = await dbByValue(dbName, tableName, whereColumn, whereValue);
+            await context.sendActivity(MessageFactory.attachment(buildQueryResultCard(
+              { source: dbName, variant: 'value', tableName, filterCol: whereColumn, filterVal: whereValue },
               result.rows,
             )));
           } catch (err) {
             await context.sendActivity(`❌ GCP API error: ${(err as Error).message}`);
           }
         } else {
-          // sbic <table_name> <column_name> <column_value>
-          const [tableName, whereColumn, ...valueParts] = origArgs;
-          const whereValue = valueParts.join(' ');
-          if (!tableName || !whereColumn || !whereValue) {
-            await context.sendActivity(pick([
-              `Para sa SBIC query, kailangan: table, column, at value.\nExample: \`@RGMC IT Bot sbic my_table status active\``,
-              `Kulang! Gamitin: \`@RGMC IT Bot sbic <table> <column> <value>\``,
-            ]));
-            return;
-          }
-          await context.sendActivities([{ type: 'typing' }]);
-          try {
-            const result = await sbicByValue(tableName, whereColumn, whereValue);
-            await context.sendActivity(MessageFactory.attachment(buildQueryResultCard(
-              { source: 'sbic', variant: 'value', tableName, filterCol: whereColumn, filterVal: whereValue },
-              result.rows,
-            )));
-          } catch (err) {
-            await context.sendActivity(`❌ GCP API error: ${(err as Error).message}`);
-          }
+          const unknownCmd = command || '(walang sinabi)';
+          await context.sendActivity(pick([
+            `Huh? 🤔 Hindi ko gets ang \`${unknownCmd}\`. Eto ang mga alam ko:`,
+            `\`${unknownCmd}\`? Saang mundo galing yan? 😂 Hindi ko kilala yun. Eto ang commands ko:`,
+            `Ay, hindi ako basta-basta — wala akong alam na \`${unknownCmd}\`. 😅 Baka ito ang hinahanap mo:`,
+            `Hmmmm... \`${unknownCmd}\`... hindi sa akin yan. 🤷 Eto ang actual na commands ko:`,
+          ]));
+          await context.sendActivity(MessageFactory.attachment(buildHelpCard()));
         }
-        break;
-      }
-
-      case 'help':
-        await context.sendActivity(MessageFactory.attachment(buildHelpCard()));
-        break;
-
-      default: {
-        const unknownCmd = command || '(walang sinabi)';
-        await context.sendActivity(pick([
-          `Huh? 🤔 Hindi ko gets ang \`${unknownCmd}\`. Eto ang mga alam ko:`,
-          `\`${unknownCmd}\`? Saang mundo galing yan? 😂 Hindi ko kilala yun. Eto ang commands ko:`,
-          `Ay, hindi ako basta-basta — wala akong alam na \`${unknownCmd}\`. 😅 Baka ito ang hinahanap mo:`,
-          `Hmmmm... \`${unknownCmd}\`... hindi sa akin yan. 🤷 Eto ang actual na commands ko:`,
-        ]));
-        await context.sendActivity(MessageFactory.attachment(buildHelpCard()));
         break;
       }
     }

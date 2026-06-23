@@ -46,16 +46,16 @@ export function bigqueryLatest(tableName: string, dateColumn: string) {
   });
 }
 
-export function sbicByValue(tableName: string, whereColumn: string, whereValue: string) {
-  return gcpGet('/sbic/by_table/value', {
+export function dbByValue(dbName: string, tableName: string, whereColumn: string, whereValue: string) {
+  return gcpGet(`/${dbName}/by_table/value`, {
     table_name: tableName,
     where_column: whereColumn,
     where_value: whereValue,
   });
 }
 
-export function sbicLatest(tableName: string, dateColumn: string, numberOfRows = 100) {
-  return gcpGet('/sbic/by_table/latest', {
+export function dbLatest(dbName: string, tableName: string, dateColumn: string, numberOfRows = 100) {
+  return gcpGet(`/${dbName}/by_table/latest`, {
     table_name: tableName,
     date_column: dateColumn,
     number_of_rows: numberOfRows,
