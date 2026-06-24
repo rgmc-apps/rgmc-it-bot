@@ -3,6 +3,7 @@ import {
   getRegistrationCode,
   getSubscriptionByChannelId,
   createSubscription,
+  subscribeChannelDirect,
   deleteSubscription,
   markCodeUsed,
   updateSubscriptionFilters,
@@ -66,6 +67,73 @@ export async function registerChannel(context: TurnContext, code: string): Promi
   return {
     success: true,
     message: `✅ This channel is now registered for RGMC IT ticket notifications!\n\n**Code used:** \`${code.toUpperCase()}\`\n\nYou'll receive alerts when tickets are created, updated, or resolved.\nType \`@RGMC IT Bot help\` to see available commands.`,
+    subscription,
+  };
+}
+
+const VALID_EVENTS = new Set(['created', 'updated', 'resolved', 'all']);
+
+export async function subscribeChannel(
+  context: TurnContext,
+  events: string[]
+): Promise<RegisterResult> {
+  const activity = context.activity;
+  const teamsData = activity.channelData as Record<string, unknown> | undefined;
+
+  const channelId: string =
+    (teamsData?.['teamsChannelId'] as string) ||
+    activity.conversation.id;
+
+  const existing = await getSubscriptionByChannelId(channelId);
+  if (existing) {
+    return {
+      success: false,
+      message: `ℹ️ This channel is already subscribed for notifications.\n\nUse \`@RGMC IT Bot configure\` to adjust which events you receive, or \`@RGMC IT Bot status\` to see current settings.`,
+    };
+  }
+
+  const wantsAll     = events.length === 0 || events.includes('all');
+  const notifyCreated  = wantsAll || events.includes('created');
+  const notifyUpdated  = wantsAll || events.includes('updated');
+  const notifyResolved = wantsAll || events.includes('resolved');
+
+  const conversationRef = TurnContext.getConversationReference(activity);
+  const teamId      = (teamsData?.['team']   as { id?: string }   | undefined)?.id   || null;
+  const channelName = (teamsData?.['channel'] as { name?: string } | undefined)?.name || null;
+  const tenantId    = (teamsData?.['tenant']  as { id?: string }   | undefined)?.id   || null;
+
+  const subscription = await subscribeChannelDirect({
+    channelId,
+    serviceUrl: activity.serviceUrl,
+    conversationRef,
+    tenantId,
+    teamId,
+    channelName,
+    notifyCreated,
+    notifyUpdated,
+    notifyResolved,
+  });
+
+  if (!subscription) {
+    return { success: false, message: '❌ Failed to subscribe. Please try again.' };
+  }
+
+  const eventList: string[] = [];
+  if (notifyCreated)  eventList.push('🆕 Ticket created');
+  if (notifyUpdated)  eventList.push('✏️ Ticket updated');
+  if (notifyResolved) eventList.push('✅ Ticket resolved');
+
+  return {
+    success: true,
+    message: [
+      `✅ This channel is now **subscribed** for RGMC IT ticket notifications!`,
+      ``,
+      `**Events you'll receive:**`,
+      ...eventList.map(e => `• ${e}`),
+      ``,
+      `Use \`@RGMC IT Bot configure\` to fine-tune filters (priority, type).`,
+      `Use \`@RGMC IT Bot unregister\` to stop notifications.`,
+    ].join('\n'),
     subscription,
   };
 }

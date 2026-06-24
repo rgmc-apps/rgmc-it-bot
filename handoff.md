@@ -1,139 +1,129 @@
 # Handoff
 
 ## Goal
-A fully operational MS Teams bot (RGMC IT Bot) deployed on Google Cloud Run that:
-- Sends real-time ticket notifications to registered Teams channels when tickets are created/updated in the RGMC ticketing system (Supabase)
-- Allows channels to self-register with a code (`register <CODE>`)
-- Allows users to query ticket status by number (`ticket <NUMBER>`)
-- Allows users to ask IT-related questions answered by ChatGPT (`ask <QUESTION>`)
-- Allows users to check if a site is up (`gumagana po ba yung <SITE>`) — pings via gateway
-- Allows users to get a system's URL (`anong site po yung <SYSTEM>`) — shows primary/backup URLs
-- Allows users to confirm the bot is alive (`vibe check`) — randomized Taglish reply
-- Has a playful Taglish personality with randomized error responses
-- Exposes webhook endpoints for the `rgmc-gateway` project to call when tickets change
-- Has a `/health` endpoint that checks bot credentials + Supabase connectivity
 
-**Deployed URL:** `https://rgmc-it-bot-935246372408.asia-southeast1.run.app`
-**Gateway URL:** `https://rgmc-gateway-935246372408.asia-southeast1.run.app`
-**Bot App ID (Entra/manifest):** `32374f3f-e2a8-4bb0-98e9-047329bbb720`
+Extend the RGMC IT Teams bot (`C:\claude\rgmc-it-bot`) with database query commands that hit the `rgmc-gcp-api` (`C:\RGMC\Source\git\rgmc-gcp-api`). Users can query MSSQL databases and BigQuery through natural Teams chat commands. Results render as an expandable Adaptive Card table — first 5 rows visible, remaining rows toggled in-place. The bot also auto-detects any valid database name as a command (generic pattern), so no code changes are needed when new databases are added to `mappings.py`.
+
+End state: all commands working in prod Teams, `travel_expense_prod` access granted to the SQL login, GCP API changes deployed.
 
 ---
 
 ## Current State
 
-### rgmc-it-bot — needs redeployment
+### Bot (`C:\claude\rgmc-it-bot`) — ✅ All committed, clean
 
-All code is fully implemented, committed, and TypeScript compiles clean. **The latest commits have NOT been deployed to Cloud Run yet.** The currently running Cloud Run revision is stale — it predates the auth fix, the vibe check command, and the GPT chunking fix. The bot will return 401 on `/api/messages` until redeployed.
+Last commit: `aa9b60d added connection changes`
 
-Latest commits (all need to land on Cloud Run):
-- `70277f3` — added gpt limiting (chunkText, raised max_tokens default to 4096)
-- `c0a9559` — added vibe check command
-- `cfc33c1` — modified dialogs
-- `a6bb4e8` — added gumagana / anong site commands
-- `48a12cf` — metadata fix
-- `21fc020` — auth fix (node-fetch shim)
+All new features are implemented and TypeScript compiles clean (`npx tsc --noEmit` passes).
 
-| Feature | Status |
-|---|---|
-| node-fetch shim (auth fix) | Committed, **NOT deployed** |
-| `register / unregister / configure / status` | Implemented, not tested end-to-end |
-| `ticket <NUMBER>` | Implemented, not tested end-to-end |
-| `ask <QUESTION>` | Implemented — now chunks long responses, 4096 token default |
-| `vibe check` | Implemented — 6 randomized Taglish alive-responses |
-| `gumagana po ba yung <SITE>` | Implemented — pings gateway, renders site status card |
-| `anong site po yung <SYSTEM>` | Implemented — shows primary/backup URLs for a system |
-| `help` command | Renders styled Adaptive Card with all commands including vibe check |
-| Adaptive Card designs | ticket created, ticket updated, ticket status, site status, site info, help |
-| Bot personality (Taglish errors) | Implemented — `pick()` helper, randomized messages |
-| Cloud Run deployment | **NEEDS REDEPLOY** |
+**Working commands:**
+- `bigquery <table> <col> <val>` → `GET /bigquery_routes/by_table/value`
+- `bigquery latest <table> <datecol>` → `GET /bigquery_routes/by_table/latest`
+- `<db_name> <table> <col> <val>` → `GET /{db_name}/by_table/value` (generic — any valid db_mappings key)
+- `<db_name> latest <table> <datecol> [numrows]` → `GET /{db_name}/by_table/latest`
+- Optional Filipino prefix phrases `may pumasok ba sa` / `may pumasok ba ngayon sa` are stripped before command parsing
 
-### Auth error (root cause found and fixed)
+**Adaptive Card table features:**
+- MAX_PREVIEW_ROWS = 5 (always visible), MAX_PREVIEW_COLS = 5, MAX_TOTAL_ROWS = 15
+- Hidden rows use `Action.ToggleVisibility` with IDs `qr-row-{i}`
+- Full values shown (`wrap: true`, no truncation), zebra-striped rows (alternating Container `style`)
+- Row count badge in header; "showing first N of M" when capped at 15
+- 404 db-not-found → lists valid names; 403 access denied → friendly Filipino message
 
-The bot was returning 401 on all `/api/messages` requests. Working fix (`21fc020`): intercepts `require('node-fetch')` via `Module._load` override at the very top of `app.ts` module body, BEFORE `registerRoutes()` loads botbuilder. Returns `globalThis.fetch` (Node 22 native, undici-backed) instead of node-fetch v2. This fixes the `Premature close at Gunzip` error in `openIdMetadata.js`.
+**Error handling typed:**
+- `GcpAccessError` (HTTP 403) → `🔒 Access denied — ang SQL login ay walang permission...`
+- `GcpNotFoundError` (HTTP 404) → lists valid db names from mappings
+- Generic fallback → raw error message
 
-The shim prints `[shim] node-fetch → native fetch (Node 22)` to logs on startup — look for this after deploy to confirm it's active.
+### GCP API (`C:\RGMC\Source\git\rgmc-gcp-api`) — ⚠️ Uncommitted changes
+
+Last commit: `cb87a3d added mapping changes`
+
+`src/routers/mssql_routes/mssql_routes.py` was modified this session but **not committed**. The change adds `_handle_db_error()` and `_invalidate_engine()`.
+
+**Outstanding blocker:** The SQL Server login used in production (`MSSQL_USER` env var = `sqlserver`) does not have access to `travel_expense_prod` (mapped from the command `travelandexpense`). This causes an error when querying that database. The GCP API now correctly surfaces it as HTTP 403, but the underlying DB permission must be fixed by a DBA.
 
 ---
 
 ## Files Actively Being Edited
 
-All changes this session are committed. No files are in a mid-edit state.
+### Bot (`C:\claude\rgmc-it-bot`) — all committed
 
-### Changes from this session:
+- `src/bot.ts` — Added `QUERY_PREFIX` static regex; `origArgs` (original-case); `case 'bigquery':` handler; generic `<db_name>` handler in `default:` (3+ arg threshold); `gcpErrorMessage()` typed error helper; new imports for GCP service and query card
+- `src/services/gcpService.ts` — **New file.** Exports `GcpAccessError`, `GcpNotFoundError`, `bigqueryByValue`, `bigqueryLatest`, `dbByValue`, `dbLatest`. Uses native `fetch` (Node 22). Parses JSON `detail` field. Throws typed errors on 403/404.
+- `src/cards/queryResultCard.ts` — **New file.** Adaptive Card v1.4 table with ColumnSet rows, zebra containers, `Action.ToggleVisibility` for hidden rows. No truncation. MAX_TOTAL_ROWS=15.
+- `src/config.ts` — Added `gcpApiUrl: process.env.GCP_API_URL || ''`
 
-- `src/bot.ts` — Added `vibe check` case (command=`vibe`, checks `args[0]==='check'`; 6 randomized Taglish alive replies). Added `chunkText()` helper (splits at newline → space → hard cut, ≤3800 chars per chunk). Updated `ask` case to use `chunkText()` — sends multiple messages labeled `(1/2)`, `(2/2)` etc. for long GPT answers.
+### GCP API (`C:\RGMC\Source\git\rgmc-gcp-api`) — **not committed**
 
-- `src/cards/helpCard.ts` — Added new **🟢 GENERAL** section at the top of the command list with `vibe check` entry.
-
-- `src/config.ts` — Raised default `GPT_LIMIT` from `1000` → `4096` tokens so GPT no longer gets cut off mid-answer.
-
-### Files from previous sessions (for reference):
-
-- `src/app.ts` — `Module._load` shim at lines 17–32 replaces node-fetch with native fetch before botbuilder loads.
-- `src/cards/ticketCard.ts` — buildTicketCreatedCard, buildTicketUpdatedCard, buildTicketStatusCard
-- `src/cards/siteStatusCard.ts` — buildSiteStatusCard (ping results with latency)
-- `src/cards/siteInfoCard.ts` — buildSiteInfoCard (primary/backup URLs)
-- `src/cards/helpCard.ts` — buildHelpCard (all commands, color-coded sections)
-- `src/services/pingService.ts` — GET {GATEWAY_BASE_URL}/api/admin/systems/{id}/ping
-- `src/services/gptService.ts` — OpenAI streaming, assembles full string before returning
-- `src/services/supabase.ts` — findSystemsByTag (filters by comma-separated tags column)
-- `src/config.ts` — gptApiKey, gptVersion, gptLimit, gatewayAdminUsername
-- `src/types/index.ts` — System interface, PingResult interface
-- `Dockerfile` — Node 22 (both builder and runtime stages)
+- `src/routers/mssql_routes/mssql_routes.py` — Added `_invalidate_engine(db_name)` to evict broken cached engines on failure; added `_handle_db_error(db_name, e)` that detects `Login failed`/`Cannot open database` in the error string and returns HTTP 403 with a DBA instruction message instead of a raw HTTP 500.
 
 ---
 
 ## Failed Attempts
 
-- **What was tried**: Passing native fetch as `customFetchImpl` (4th arg) to `ConfigurationBotFrameworkAuthentication` — **Why it failed**: This parameter only affects outbound connector HTTP calls. The inbound JWT validation path goes through `JwtTokenExtractor` → `OpenIdMetadata` → direct `require('node-fetch')` call. `customFetchImpl` is never forwarded there.
+- **`{ type: 'Separator' }` as Adaptive Card body element** — **Why it failed**: Not a valid Adaptive Card element; Teams rejected the entire payload with "unsupported card element". Fixed by setting `separator: true` on the first data row's Container.
 
-- **What was tried**: Node 20 in Dockerfile — **Why it failed**: Supabase Realtime client throws synchronously `"Node.js 20 detected without native WebSocket support"` at module load time, crashing the process before it can bind port 8080.
+- **`wrap: false` + truncating values to 22 chars** — **Why it failed**: Values displayed with "..." and were unreadable. Removed the `cell()` function entirely; now `wrap: true` on all data TextBlocks.
 
-- **What was tried**: Top-level import of health route in `app.ts` — **Why it failed**: Eagerly loaded Supabase at module startup; if any env var was invalid, the process crashed before binding port 8080.
+- **`MAX_TOTAL_ROWS = 200`** — **Why it failed**: ~130KB card payload, over Teams' ~28KB limit. Error: "Message size too large". Fixed by reducing to 15.
 
-- **What was tried**: Registering `/health` inside `registerRoutes()` try/catch — **Why it failed**: If bot credentials failed, the whole `registerRoutes()` threw and health was never registered, returning `Cannot GET /health`.
+- **SBIC as a hardcoded `case 'sbic':` command** — Removed; replaced by the generic `default:` handler. The GCP API endpoint changed from `/sbic/by_table/value` to `/{db_name}/by_table/value`.
+
+- **Querying `travelandexpense` db** — **Why it failed**: SQL Server `sqlserver` login lacks access on `travel_expense_prod`. Error: `Cannot open database "travel_expense_prod" requested by the login. Login failed for user 'sqlserver'`. DBA task required.
 
 ---
 
 ## Next Step
 
-**Deploy the bot to Cloud Run.** All code is ready and compiles clean. Run from `C:\claude\rgmc-it-bot`:
+**Commit the GCP API changes, then fix the SQL Server permission:**
 
-```
-gcloud run deploy rgmc-it-bot --source . --region asia-southeast1
-```
+1. Commit the `mssql_routes.py` fix in the GCP API repo:
+   ```
+   cd C:\RGMC\Source\git\rgmc-gcp-api
+   git add src/routers/mssql_routes/mssql_routes.py
+   git commit -m "improved db error handling — 403 on permission denied, engine cache invalidation"
+   ```
 
-Then set any missing env vars (if not already set on the Cloud Run service):
-```
-gcloud run services update rgmc-it-bot --region asia-southeast1 \
-  --set-env-vars GPT_API_KEY=<openai-key>,GPT_VERSION=gpt-4o,GPT_LIMIT=4096,GATEWAY_ADMIN_USERNAME=<admin-username>
-```
+2. Have a DBA run this on the production SQL Server to unblock `travelandexpense` queries:
+   ```sql
+   USE [travel_expense_prod];
+   CREATE USER [sqlserver] FOR LOGIN [sqlserver];
+   ALTER ROLE [db_datareader] ADD MEMBER [sqlserver];
+   ```
+   > Verify the physical DB name first — `mappings.py` currently maps `travelandexpense` → `travel_expense_prod`. During the session the error message mentioned `travel_and_expense_prod` (with `_and_`). Check current `db_mappings` in `src/mappings.py` line 6 before running.
 
-After deploy:
-1. Check logs for `[shim] node-fetch → native fetch (Node 22)` — confirms the auth fix is active
-2. Hit `/health` — both `bot_credentials` and `supabase` should be `"ok"`
-3. In Teams, test `@RGMC IT Bot vibe check` — should get one of 6 randomized alive replies
-4. In Teams, test `@RGMC IT Bot ask <long question>` — should get chunked messages if response is long
-5. Test `@RGMC IT Bot gumagana po ba yung <tag>` with a known tag from the systems table
-6. Test `@RGMC IT Bot help` — should show GENERAL section with vibe check at the top
+3. Deploy the GCP API to Cloud Run after commit so the 403 error handling is live.
 
 ---
 
 ## Context & Gotchas
 
-- **No `.env` file** in `C:\claude\rgmc-it-bot\`. All env vars must be set in Cloud Run directly. Only `.env.example` exists.
-- **`GATEWAY_ADMIN_USERNAME`** must be a username that has `is_admin = true` in the gateway's `users` table. The ping endpoint (`GET /api/admin/systems/<id>/ping`) uses `X-Gateway-Username` header for auth.
-- **`tags` column in `systems` table** is plain text, comma-separated (e.g. `"payroll,hr"`). The bot fetches all systems with non-null tags and filters in-process. Matching is case-insensitive exact match against each tag token.
-- **Bot manifest ID** (`32374f3f-e2a8-4bb0-98e9-047329bbb720`) must exactly match `BOT_ID` env var in Cloud Run.
-- **Azure Bot messaging endpoint** must be `https://rgmc-it-bot-935246372408.asia-southeast1.run.app/api/messages`.
-- **`vibe check` is two words** — command=`vibe`, args[0]=`check`. Typing just `vibe` returns a correction nudge. The switch `case 'vibe':` checks `args[0] !== 'check'` to handle the partial case.
-- **`chunkText()` splits at** natural boundaries: tries last `\n` before 3800 chars, then last space, then hard cut. Chunks are labeled `*(1/2)*` etc. only when there are multiple chunks.
-- **`GPT_LIMIT` default is now 4096** — was 1000 in old Cloud Run env vars; update it via `gcloud run services update` or the Cloud Run console to match.
-- **`src/routes/health.ts`** still exists as a dead file — it was replaced by inline health logic in `app.ts`. Safe to ignore or delete.
-- **Cloud Run sets `PORT=8080`** — app reads `process.env.PORT || '3978'`, works correctly.
-- **Supabase table name** is `bot_subscriptions` (not `channel_subscriptions`).
-- **Teams bot installation**: the bot must be explicitly installed into each Team via Apps before it can receive @mentions. Registering the manifest alone is not enough.
-- **`ask` command is case-insensitive** — `text.toLowerCase().split()` is used.
-- **`gumagana` strips** leading filler words `po`, `ba`, `yung` and trailing `?`. **`anong` strips** `site`, `po`, `yung` and trailing `?`. Both use `extractArg()` in `bot.ts`.
-- **`anong site po yung`**: single-system result shows Open Primary / Open Backup action buttons; multiple systems show URL as text only.
-- **`rgmc-gateway` deep-link** (`GET /admin/issues/<id>`) requires admin login — users clicking "View Ticket" must already be logged in as admin.
+**Bot env var required:** `GCP_API_URL` must be set to the base URL of the GCP API (no trailing slash). Without it, all GCP commands throw "GCP_API_URL is not configured" immediately.
+
+**Valid `db_name` command keywords (from `mappings.py`):**
+```
+sbic             → sbic_prod
+tradeportal      → trade_portal_prod
+travelandexpense → travel_expense_prod   ← verify physical name
+creative         → creative_prod
+accounting       → accounting_prod
+production       → production_prod
+masterfile       → masterfile_prod
+```
+
+**Bot `default:` case is the generic DB handler.** Any command that isn't a known keyword (register, unregister, ticket, configure, status, ask, gumagana, anong, vibe, help, bigquery) AND has 3+ args is forwarded to the GCP API as `/{command}/by_table/value`. Typos with 3+ args hit the GCP API and return 404 (listing valid db names) rather than the help card.
+
+**Teams Adaptive Card size limit is ~28KB.** `MAX_TOTAL_ROWS = 15` in `src/cards/queryResultCard.ts:6`. With untruncated long-text values (descriptions, notes), rows can exceed the 650B/row estimate. If size errors return, reduce this constant.
+
+**`Action.ToggleVisibility` IDs are `qr-row-0`, `qr-row-1`, ...** These target the hidden Container elements in the card body. ID stability is per-render; no issue since the bot doesn't update cards after sending.
+
+**Original-case args split:** `bot.ts` keeps two arg arrays — `args` (lowercased, for keyword matching like `'latest'`) and `origArgs` (original case, for passing table/column/value names to the API). This matters because SQL Server table and column names can be case-sensitive in some collations.
+
+**GCP API engine cache:** `_engines` dict in `mssql_routes.py` is module-level, persists per Cloud Run instance. Permission failures now call `_invalidate_engine()` so the next request tries fresh. Other failures (bad table name, SQL error) do NOT invalidate the engine.
+
+**Node version:** Project targets Node 22 (`@types/node: ^22.0.0`). Native `fetch` is used in `gcpService.ts` — no axios in `package.json`, none needed.
+
+**`sbic` command removed as explicit case.** Users type `sbic <table> <col> <val>` and the `default:` generic handler routes it. Behavior is identical to before, routing path changed from `/sbic/by_table/*` to `/{db_name}/by_table/*`.
+
+**The `bigquery` command keeps its own explicit `case 'bigquery':`** and hits `/bigquery_routes/by_table/*` — different path prefix from the MSSQL generic routes. Do not change this.

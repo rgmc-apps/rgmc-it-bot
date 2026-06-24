@@ -3,6 +3,7 @@ import { getTicketByNumber, findSystemsByTag } from './services/supabase';
 import {
   registerChannel,
   unregisterChannel,
+  subscribeChannel,
   configureFilters,
   getChannelStatus,
 } from './services/channelService';
@@ -109,6 +110,23 @@ export class RgmcItBot extends TeamsActivityHandler {
 
       case 'unregister': {
         const result = await unregisterChannel(context);
+        await context.sendActivity(result.message);
+        break;
+      }
+
+      case 'subscribe': {
+        const validEvents = new Set(['created', 'updated', 'resolved', 'all']);
+        const requestedEvents = args.filter(a => validEvents.has(a));
+
+        if (args.length > 0 && requestedEvents.length === 0) {
+          await context.sendActivity(pick([
+            `Hmm, hindi ko kilala ang event na yan. 🤔 Valid options:\n• \`subscribe\` — new issues only\n• \`subscribe all\` — all ticket events\n• \`subscribe created updated resolved\` — mix and match`,
+            `Ay, mali ang event name. 😅 Gamitin:\n• \`subscribe\` — new issues only\n• \`subscribe all\` — lahat ng events\n• \`subscribe created updated resolved\` — pinili mo`,
+          ]));
+          return;
+        }
+
+        const result = await subscribeChannel(context, requestedEvents);
         await context.sendActivity(result.message);
         break;
       }

@@ -54,6 +54,42 @@ export async function getAllSubscriptions(): Promise<BotSubscription[]> {
   return data as BotSubscription[];
 }
 
+export async function subscribeChannelDirect(params: {
+  channelId: string;
+  serviceUrl: string;
+  conversationRef: Partial<ConversationReference>;
+  tenantId: string | null;
+  teamId: string | null;
+  channelName: string | null;
+  notifyCreated: boolean;
+  notifyUpdated: boolean;
+  notifyResolved: boolean;
+}): Promise<BotSubscription | null> {
+  const internalCode = `SUB-${generateRandomCode()}`;
+  const { data, error } = await db
+    .from('bot_subscriptions')
+    .upsert({
+      channel_id: params.channelId,
+      service_url: params.serviceUrl,
+      conversation_ref: params.conversationRef,
+      tenant_id: params.tenantId,
+      team_id: params.teamId,
+      channel_name: params.channelName,
+      registration_code: internalCode,
+      notify_created: params.notifyCreated,
+      notify_updated: params.notifyUpdated,
+      notify_resolved: params.notifyResolved,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'channel_id' })
+    .select()
+    .single();
+  if (error) {
+    console.error('subscribeChannelDirect error:', error.message);
+    return null;
+  }
+  return data as BotSubscription;
+}
+
 export async function createSubscription(params: {
   channelId: string;
   serviceUrl: string;

@@ -96,8 +96,23 @@ export function buildHelpCard(): Attachment {
       // ── 📢 Channel ───────────────────────────────────────────────────────────
       sectionHeader('📢', 'CHANNEL', 'good'),
       cmdRow(
+        'subscribe',
+        'Subscribe this channel to new issue alerts (no code needed).',
+        'good',
+      ),
+      cmdRow(
+        'subscribe all',
+        'Subscribe to all ticket events: created, updated, and resolved.',
+        'good',
+      ),
+      cmdRow(
+        'subscribe created updated resolved',
+        'Subscribe to specific events only — mix and match as needed.',
+        'good',
+      ),
+      cmdRow(
         'register <CODE>',
-        'Register this channel to receive ticket notifications.',
+        'Register this channel using an admin-issued code (full setup).',
         'good',
       ),
       cmdRow(
