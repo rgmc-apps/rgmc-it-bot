@@ -22,6 +22,26 @@ const PRIORITY_ICON: Record<string, string> = {
   low:      '🟢',
 };
 
+const PRIORITY_SUBTITLE: Record<string, string> = {
+  critical: 'Requires immediate attention',
+  high:     'Urgent — handle today',
+  medium:   'Standard priority queue',
+  low:      'Non-urgent',
+};
+
+// Maps to Adaptive Card TextBlock `color` values
+const PRIORITY_COLOR: Record<string, string> = {
+  critical: 'attention',
+  high:     'warning',
+  medium:   'accent',
+  low:      'good',
+};
+
+const PRIORITY_ACTION_TAG: Record<string, string> = {
+  critical: '⚠️ ACTION REQUIRED',
+  high:     '⚡ URGENT',
+};
+
 // ── Status ────────────────────────────────────────────────────────────────────
 
 const STATUS_STYLE: Record<string, ContainerStyle> = {
@@ -123,21 +143,73 @@ function headerContainer(displayNumber: string, label: string, subtitle: string)
   };
 }
 
-// Thin full-bleed strip for priority
-function priorityStrip(priority: string) {
-  const style = PRIORITY_STYLE[priority.toLowerCase()] ?? 'default';
-  const icon  = PRIORITY_ICON[priority.toLowerCase()] ?? '⚪';
+// Full-bleed priority badge — more prominent for critical/high
+function priorityBadge(priority: string) {
+  const p        = priority.toLowerCase();
+  const style    = PRIORITY_STYLE[p] ?? 'default';
+  const icon     = PRIORITY_ICON[p] ?? '⚪';
+  const subtitle = PRIORITY_SUBTITLE[p] ?? '';
+  const tag      = PRIORITY_ACTION_TAG[p];
+
+  const textCol = {
+    type:                     'Column',
+    width:                    'stretch',
+    verticalContentAlignment: 'Center',
+    items: [
+      {
+        type:    'TextBlock',
+        text:    `${p.toUpperCase()} PRIORITY`,
+        size:    (p === 'critical' || p === 'high') ? 'Default' : 'Small',
+        weight:  'Bolder',
+        spacing: 'None',
+      },
+      ...(subtitle ? [{
+        type:     'TextBlock',
+        text:     subtitle,
+        size:     'Small',
+        isSubtle: true,
+        spacing:  'None',
+        wrap:     true,
+      }] : []),
+    ],
+  };
+
+  const iconCol = {
+    type:                     'Column',
+    width:                    'auto',
+    verticalContentAlignment: 'Center',
+    items: [{
+      type:    'TextBlock',
+      text:    icon,
+      size:    (p === 'critical' || p === 'high') ? 'Large' : 'Medium',
+      spacing: 'None',
+    }],
+  };
+
+  const tagCol = tag
+    ? {
+        type:                     'Column',
+        width:                    'auto',
+        verticalContentAlignment: 'Center',
+        items: [{
+          type:    'TextBlock',
+          text:    tag,
+          size:    'Small',
+          weight:  'Bolder',
+          spacing: 'None',
+        }],
+      }
+    : null;
+
   return {
     type:    'Container',
     style,
     bleed:   true,
     spacing: 'None',
     items:   [{
-      type:    'TextBlock',
-      text:    `${icon}  ${priority.toUpperCase()} PRIORITY`,
-      size:    'Small',
-      weight:  'Bolder',
+      type:    'ColumnSet',
       spacing: 'None',
+      columns: [iconCol, textCol, ...(tagCol ? [tagCol] : [])],
     }],
   };
 }
@@ -213,7 +285,7 @@ export function buildTicketCreatedCard(ticket: Ticket): Attachment {
     version: '1.4',
     body:    [
       headerContainer(displayNumber, '🎫  NEW TICKET', title),
-      ...(prio ? [priorityStrip(prio)] : []),
+      ...(prio ? [priorityBadge(prio)] : []),
       // Reporter / type / dept grid
       { type: 'ColumnSet', spacing: 'Medium', columns: infoCols },
       // Site
@@ -358,6 +430,8 @@ export function buildTicketStatusCard(ticket: Ticket): Attachment {
           type:    'TextBlock',
           text:    `${PRIORITY_ICON[ticket.priority.toLowerCase()] ?? ''} ${ticket.priority.toUpperCase()}`,
           size:    'Small',
+          weight:  'Bolder',
+          color:   PRIORITY_COLOR[ticket.priority.toLowerCase()] ?? 'default',
           spacing: 'None',
         },
       ],

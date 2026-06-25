@@ -2,128 +2,185 @@
 
 ## Goal
 
-Extend the RGMC IT Teams bot (`C:\claude\rgmc-it-bot`) with database query commands that hit the `rgmc-gcp-api` (`C:\RGMC\Source\git\rgmc-gcp-api`). Users can query MSSQL databases and BigQuery through natural Teams chat commands. Results render as an expandable Adaptive Card table — first 5 rows visible, remaining rows toggled in-place. The bot also auto-detects any valid database name as a command (generic pattern), so no code changes are needed when new databases are added to `mappings.py`.
+Build and maintain the **RGMC IT Teams Bot** (`C:\claude\rgmc-it-bot`) — a Microsoft Teams bot registered on the RGMC Entra organization that:
 
-End state: all commands working in prod Teams, `travel_expense_prod` access granted to the SQL login, GCP API changes deployed.
+- Notifies subscribed Teams channels when IT tickets are created or updated (pushed from `C:\claude\rgmc-gateway`)
+- Lets users query ticket status, check site health, query GCP/MSSQL databases, and ask AI questions
+- Supports both admin-code-based registration (`register <CODE>`) and self-service channel subscription (`subscribe`)
+- Exposes webhook endpoints (`/api/notify/*`) that `rgmc-gateway` (Python/Flask) calls after ticket create/update events
+
+End state: both projects deployed to Cloud Run, gateway configured with bot URL + API key, all Teams channels able to self-subscribe and receive real-time ticket alerts.
 
 ---
 
 ## Current State
 
-### Bot (`C:\claude\rgmc-it-bot`) — ✅ All committed, clean
+### Bot (`C:\claude\rgmc-it-bot`) — ✅ Compiles clean, uncommitted changes this session
 
-Last commit: `aa9b60d added connection changes`
+`npx tsc --noEmit` passes. Last git commit: `aa9b60d added connection changes`.
 
-All new features are implemented and TypeScript compiles clean (`npx tsc --noEmit` passes).
+**Changes made this session (not yet committed):**
+- `subscribe` command added — self-service channel subscription without admin codes
+- `subscribeChannelDirect()` added to `supabase.ts` — inserts `bot_subscriptions` row with auto-generated `SUB-XXXXXXXX` code
+- `subscribeChannel()` added to `channelService.ts` — orchestrates the subscription flow
+- Help card updated with three new `subscribe` command entries
 
-**Working commands:**
-- `bigquery <table> <col> <val>` → `GET /bigquery_routes/by_table/value`
-- `bigquery latest <table> <datecol>` → `GET /bigquery_routes/by_table/latest`
-- `<db_name> <table> <col> <val>` → `GET /{db_name}/by_table/value` (generic — any valid db_mappings key)
-- `<db_name> latest <table> <datecol> [numrows]` → `GET /{db_name}/by_table/latest`
-- Optional Filipino prefix phrases `may pumasok ba sa` / `may pumasok ba ngayon sa` are stripped before command parsing
+**All working bot commands:**
+| Command | Function |
+|---|---|
+| `subscribe` | Self-service subscription (notify_created only) |
+| `subscribe all` | Subscribe to created + updated + resolved |
+| `subscribe created updated resolved` | Mix-and-match event types |
+| `register <CODE>` | Admin-code-based registration (existing) |
+| `unregister` | Remove subscription |
+| `configure all / priority / type` | Filter notifications |
+| `status` | Show current subscription config |
+| `ticket <NUMBER>` | Look up ticket status |
+| `gumagana po ba yung <SITE>` | Ping site |
+| `anong site po yung <SYSTEM>` | Get site URL |
+| `ask <QUESTION>` | GPT-powered AI assistant |
+| `bigquery <table> <col> <val>` | Query BigQuery |
+| `bigquery latest <table> <datecol>` | Latest BigQuery rows |
+| `<db_name> <table> <col> <val>` | Generic MSSQL query |
+| `vibe check` | Bot health check |
 
-**Adaptive Card table features:**
-- MAX_PREVIEW_ROWS = 5 (always visible), MAX_PREVIEW_COLS = 5, MAX_TOTAL_ROWS = 15
-- Hidden rows use `Action.ToggleVisibility` with IDs `qr-row-{i}`
-- Full values shown (`wrap: true`, no truncation), zebra-striped rows (alternating Container `style`)
-- Row count badge in header; "showing first N of M" when capped at 15
-- 404 db-not-found → lists valid names; 403 access denied → friendly Filipino message
+**Webhook endpoints (already existed, used by gateway):**
+- `POST /api/notify/ticket-created` — `{ event: "ticket.created", ticket: Ticket }`
+- `POST /api/notify/ticket-updated` — `{ event: "ticket.updated", ticket: Ticket, changes: TicketChanges }`
+- `POST /api/notify` — unified endpoint, dispatches on `payload.event`
+- All three require `x-api-key` header matching `WEBHOOK_API_KEY` env var
 
-**Error handling typed:**
-- `GcpAccessError` (HTTP 403) → `🔒 Access denied — ang SQL login ay walang permission...`
-- `GcpNotFoundError` (HTTP 404) → lists valid db names from mappings
-- Generic fallback → raw error message
+### Gateway (`C:\claude\rgmc-gateway`) — ✅ Changes complete, not committed
 
-### GCP API (`C:\RGMC\Source\git\rgmc-gcp-api`) — ⚠️ Uncommitted changes
+Python/Flask app. Changes made this session:
+- `services/it_bot.py` — **new file** with `notify_ticket_created()`, `notify_ticket_updated()`, `build_changes()`
+- `config.py` — added `IT_BOT_URL` and `IT_BOT_API_KEY` env vars
+- `controllers/issues.py` — wired bot notifications into three trigger points
+- `.env.example` — documented the two new env vars
 
-Last commit: `cb87a3d added mapping changes`
+**Three trigger points in `controllers/issues.py`:**
+1. `_submit_issue()` → calls `notify_ticket_created()` after attachment upload (line ~116)
+2. `_submit_helpdesk_issue()` → calls `notify_ticket_created()` after attachment upload (line ~234)
+3. `admin_patch_issue()` → calls `notify_ticket_updated()` after successful `PATCH /issues` (line ~336)
 
-`src/routers/mssql_routes/mssql_routes.py` was modified this session but **not committed**. The change adds `_handle_db_error()` and `_invalidate_engine()`.
-
-**Outstanding blocker:** The SQL Server login used in production (`MSSQL_USER` env var = `sqlserver`) does not have access to `travel_expense_prod` (mapped from the command `travelandexpense`). This causes an error when querying that database. The GCP API now correctly surfaces it as HTTP 403, but the underlying DB permission must be fixed by a DBA.
+Notifications are **fire-and-forget** — exceptions are caught and logged, never propagated to the caller.
 
 ---
 
 ## Files Actively Being Edited
 
-### Bot (`C:\claude\rgmc-it-bot`) — all committed
+### Bot (`C:\claude\rgmc-it-bot`)
 
-- `src/bot.ts` — Added `QUERY_PREFIX` static regex; `origArgs` (original-case); `case 'bigquery':` handler; generic `<db_name>` handler in `default:` (3+ arg threshold); `gcpErrorMessage()` typed error helper; new imports for GCP service and query card
-- `src/services/gcpService.ts` — **New file.** Exports `GcpAccessError`, `GcpNotFoundError`, `bigqueryByValue`, `bigqueryLatest`, `dbByValue`, `dbLatest`. Uses native `fetch` (Node 22). Parses JSON `detail` field. Throws typed errors on 403/404.
-- `src/cards/queryResultCard.ts` — **New file.** Adaptive Card v1.4 table with ColumnSet rows, zebra containers, `Action.ToggleVisibility` for hidden rows. No truncation. MAX_TOTAL_ROWS=15.
-- `src/config.ts` — Added `gcpApiUrl: process.env.GCP_API_URL || ''`
+- `src/services/supabase.ts` — Added `subscribeChannelDirect()` (lines ~57–87). Creates `bot_subscriptions` row directly without requiring a pre-existing registration code. Uses `SUB-` prefix + 8-char random code to distinguish from admin codes.
+- `src/services/channelService.ts` — Added `subscribeChannel()` (lines ~74–139). Imports `subscribeChannelDirect`. `VALID_EVENTS` set declared at module level (unused directly, logic is inline in `subscribeChannel`).
+- `src/bot.ts` — Added `subscribeChannel` to imports (line 7); added `case 'subscribe':` handler (lines ~117–132).
+- `src/cards/helpCard.ts` — Added three `subscribe` command rows to the CHANNEL section (after `register` entry).
 
-### GCP API (`C:\RGMC\Source\git\rgmc-gcp-api`) — **not committed**
+### Gateway (`C:\claude\rgmc-gateway`)
 
-- `src/routers/mssql_routes/mssql_routes.py` — Added `_invalidate_engine(db_name)` to evict broken cached engines on failure; added `_handle_db_error(db_name, e)` that detects `Login failed`/`Cannot open database` in the error string and returns HTTP 403 with a DBA instruction message instead of a raw HTTP 500.
+- `services/it_bot.py` — **New file.** `notify_ticket_created(ticket)`, `notify_ticket_updated(ticket, changes)`, `build_changes(before, patch)`. Silent on failure.
+- `config.py` — Two new lines: `IT_BOT_URL = os.environ.get("IT_BOT_URL", "")` and `IT_BOT_API_KEY = os.environ.get("IT_BOT_API_KEY", "")`.
+- `controllers/issues.py` — Three call sites added. Each introduces `created_issue: dict | None = None` local var to safely track the row returned by Supabase POST (avoids `rows` scoping issues).
+- `.env.example` — New section `─── RGMC IT Bot` with `IT_BOT_URL` and `IT_BOT_API_KEY` docs.
 
 ---
 
 ## Failed Attempts
 
-- **`{ type: 'Separator' }` as Adaptive Card body element** — **Why it failed**: Not a valid Adaptive Card element; Teams rejected the entire payload with "unsupported card element". Fixed by setting `separator: true` on the first data row's Container.
-
-- **`wrap: false` + truncating values to 22 chars** — **Why it failed**: Values displayed with "..." and were unreadable. Removed the `cell()` function entirely; now `wrap: true` on all data TextBlocks.
-
-- **`MAX_TOTAL_ROWS = 200`** — **Why it failed**: ~130KB card payload, over Teams' ~28KB limit. Error: "Message size too large". Fixed by reducing to 15.
-
-- **SBIC as a hardcoded `case 'sbic':` command** — Removed; replaced by the generic `default:` handler. The GCP API endpoint changed from `/sbic/by_table/value` to `/{db_name}/by_table/value`.
-
-- **Querying `travelandexpense` db** — **Why it failed**: SQL Server `sqlserver` login lacks access on `travel_expense_prod`. Error: `Cannot open database "travel_expense_prod" requested by the login. Login failed for user 'sqlserver'`. DBA task required.
+- **`'rows' in dir()` check in `_submit_issue()`** — First attempt to reference the Supabase `rows` variable outside its scope used `'rows' in dir() and rows`. This is non-idiomatic and unreliable Python. **Fixed** by introducing `created_issue: dict | None = None` declared before the `if SUPABASE_URL` block, assigned inside it.
 
 ---
 
 ## Next Step
 
-**Commit the GCP API changes, then fix the SQL Server permission:**
+**Commit both projects, then set the gateway env vars to connect them.**
 
-1. Commit the `mssql_routes.py` fix in the GCP API repo:
+1. Commit bot changes:
    ```
-   cd C:\RGMC\Source\git\rgmc-gcp-api
-   git add src/routers/mssql_routes/mssql_routes.py
-   git commit -m "improved db error handling — 403 on permission denied, engine cache invalidation"
+   cd C:\claude\rgmc-it-bot
+   git add src/services/supabase.ts src/services/channelService.ts src/bot.ts src/cards/helpCard.ts
+   git commit -m "add subscribe command and codeless channel subscription"
    ```
 
-2. Have a DBA run this on the production SQL Server to unblock `travelandexpense` queries:
-   ```sql
-   USE [travel_expense_prod];
-   CREATE USER [sqlserver] FOR LOGIN [sqlserver];
-   ALTER ROLE [db_datareader] ADD MEMBER [sqlserver];
+2. Commit gateway changes:
    ```
-   > Verify the physical DB name first — `mappings.py` currently maps `travelandexpense` → `travel_expense_prod`. During the session the error message mentioned `travel_and_expense_prod` (with `_and_`). Check current `db_mappings` in `src/mappings.py` line 6 before running.
+   cd C:\claude\rgmc-gateway
+   git add services/it_bot.py config.py controllers/issues.py .env.example
+   git commit -m "wire IT bot webhook notifications on ticket create and update"
+   ```
 
-3. Deploy the GCP API to Cloud Run after commit so the 403 error handling is live.
+3. Set these two env vars on the deployed gateway (Cloud Run → Edit & Deploy → Variables):
+   ```
+   IT_BOT_URL=https://<your-it-bot-cloud-run-url>
+   IT_BOT_API_KEY=<same value as WEBHOOK_API_KEY on the bot>
+   ```
+
+4. Verify end-to-end: submit a test ticket via the helpdesk form → confirm the bot posts a card to a subscribed Teams channel.
 
 ---
 
 ## Context & Gotchas
 
-**Bot env var required:** `GCP_API_URL` must be set to the base URL of the GCP API (no trailing slash). Without it, all GCP commands throw "GCP_API_URL is not configured" immediately.
+**`subscribe` vs `register` distinction:**
+- `register <CODE>` requires a pre-generated one-time code from `/api/admin/codes`. The code is validated against `bot_registration_codes` table and marked used.
+- `subscribe` generates its own internal code (`SUB-XXXXXXXX`) and inserts directly into `bot_subscriptions` without touching the codes table. No admin involvement needed.
+- Both end up as rows in `bot_subscriptions` and receive notifications identically. The `registration_code` column just holds different prefixes.
 
-**Valid `db_name` command keywords (from `mappings.py`):**
+**`subscribe` default behavior — notify_created only:**
+- Bare `@RGMC IT Bot subscribe` → `notify_created: true`, `notify_updated: false`, `notify_resolved: false`
+- This is intentional: the primary use case is "alert us when a new issue is raised"
+- `subscribe all` enables all three; `subscribe updated resolved` can mix-and-match
+
+**Gateway bot notification is truly fire-and-forget:**
+- `requests.post()` with `timeout=5` — if the bot is down or slow, the gateway continues normally
+- Exceptions are `logger.warning(...)` only, never re-raised
+- If `IT_BOT_URL` or `IT_BOT_API_KEY` is not set, `_ready()` returns `False` and the function exits immediately (safe default for local dev)
+
+**`build_changes()` in `it_bot.py` converts all values to strings:**
+- The bot's `TicketChanges` type expects `{ from: string | null, to: string | null }`
+- `build_changes` uses `str(val) if val is not None else None` — handles int fields like `request_to_department_id`
+
+**Patch context for `notify_ticket_updated`:**
+- The gateway calls `notify_ticket_updated({**issue, **patch}, changes)` where `issue` is the pre-patch row from Supabase and `patch` is the dict of changed fields
+- This constructs a "post-patch" ticket without a second DB fetch
+- The `patch` dict may include `resolved_at` (added by the gateway on resolved transitions) — this is correctly included in the merged ticket sent to the bot
+
+**Bot webhook security:**
+- The bot checks `req.headers['x-api-key']` against `config.webhookApiKey` (= `WEBHOOK_API_KEY` env var) in `src/routes/webhook.ts:10–17`
+- 401 is returned if missing or wrong — the gateway's `_headers()` function sends this as `"x-api-key": IT_BOT_API_KEY`
+
+**Bot env vars required for full functionality:**
 ```
-sbic             → sbic_prod
-tradeportal      → trade_portal_prod
-travelandexpense → travel_expense_prod   ← verify physical name
-creative         → creative_prod
-accounting       → accounting_prod
-production       → production_prod
-masterfile       → masterfile_prod
+BOT_ID               — Azure App Registration Client ID
+BOT_PASSWORD         — Azure App Registration Client Secret
+TENANT_ID            — Entra Directory Tenant ID (single-tenant)
+SUPABASE_URL         — https://eesrzpgmsrbhjeenfojq.supabase.co
+SUPABASE_SERVICE_KEY — Supabase service role key
+WEBHOOK_API_KEY      — Random secret shared with gateway as IT_BOT_API_KEY
+GATEWAY_BASE_URL     — Gateway URL for "View Ticket" buttons in cards
+GPT_API_KEY          — OpenAI key for `ask` command
+GCP_API_URL          — Base URL of rgmc-gcp-api for DB query commands
 ```
 
-**Bot `default:` case is the generic DB handler.** Any command that isn't a known keyword (register, unregister, ticket, configure, status, ask, gumagana, anong, vibe, help, bigquery) AND has 3+ args is forwarded to the GCP API as `/{command}/by_table/value`. Typos with 3+ args hit the GCP API and return 404 (listing valid db names) rather than the help card.
+**Supabase `bot_subscriptions` table shape:**
+```
+id                 uuid PK
+channel_id         text UNIQUE
+service_url        text
+conversation_ref   jsonb
+tenant_id          text
+team_id            text
+channel_name       text
+registration_code  text  (admin codes: 'ABCD1234', self-subscribe: 'SUB-XXXXXXXX')
+priority_filter    text[]
+type_filter        text[]
+notify_created     bool
+notify_updated     bool
+notify_resolved    bool
+created_at         timestamptz
+updated_at         timestamptz
+```
 
-**Teams Adaptive Card size limit is ~28KB.** `MAX_TOTAL_ROWS = 15` in `src/cards/queryResultCard.ts:6`. With untruncated long-text values (descriptions, notes), rows can exceed the 650B/row estimate. If size errors return, reduce this constant.
+**Teams Adaptive Card size limit:** ~28KB. `MAX_TOTAL_ROWS = 15` in `src/cards/queryResultCard.ts`. Reduce if size errors occur with large result sets.
 
-**`Action.ToggleVisibility` IDs are `qr-row-0`, `qr-row-1`, ...** These target the hidden Container elements in the card body. ID stability is per-render; no issue since the bot doesn't update cards after sending.
-
-**Original-case args split:** `bot.ts` keeps two arg arrays — `args` (lowercased, for keyword matching like `'latest'`) and `origArgs` (original case, for passing table/column/value names to the API). This matters because SQL Server table and column names can be case-sensitive in some collations.
-
-**GCP API engine cache:** `_engines` dict in `mssql_routes.py` is module-level, persists per Cloud Run instance. Permission failures now call `_invalidate_engine()` so the next request tries fresh. Other failures (bad table name, SQL error) do NOT invalidate the engine.
-
-**Node version:** Project targets Node 22 (`@types/node: ^22.0.0`). Native `fetch` is used in `gcpService.ts` — no axios in `package.json`, none needed.
-
-**`sbic` command removed as explicit case.** Users type `sbic <table> <col> <val>` and the `default:` generic handler routes it. Behavior is identical to before, routing path changed from `/sbic/by_table/*` to `/{db_name}/by_table/*`.
-
-**The `bigquery` command keeps its own explicit `case 'bigquery':`** and hits `/bigquery_routes/by_table/*` — different path prefix from the MSSQL generic routes. Do not change this.
+**Node version:** Node 22 — native `fetch` is used in `gcpService.ts`, and a `node-fetch` shim in `app.ts` patches the botframework's internal `node-fetch` v2 calls to use native fetch instead (avoids Gunzip errors on Node 22).
