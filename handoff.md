@@ -9,21 +9,17 @@ Build and maintain the **RGMC IT Teams Bot** (`C:\claude\rgmc-it-bot`) — a Mic
 - Supports both admin-code-based registration (`register <CODE>`) and self-service channel subscription (`subscribe`)
 - Exposes webhook endpoints (`/api/notify/*`) that `rgmc-gateway` (Python/Flask) calls after ticket create/update events
 
-End state: both projects deployed to Cloud Run, gateway configured with bot URL + API key, all Teams channels able to self-subscribe and receive real-time ticket alerts.
+End state: both projects deployed to Cloud Run, gateway configured with bot URL + API key, all Teams channels able to self-subscribe and receive real-time ticket alerts with visually distinct priority indicators.
 
 ---
 
 ## Current State
 
-### Bot (`C:\claude\rgmc-it-bot`) — ✅ Compiles clean, uncommitted changes this session
+### Bot (`C:\claude\rgmc-it-bot`) — ✅ Fully committed, clean working tree
 
-`npx tsc --noEmit` passes. Last git commit: `aa9b60d added connection changes`.
-
-**Changes made this session (not yet committed):**
-- `subscribe` command added — self-service channel subscription without admin codes
-- `subscribeChannelDirect()` added to `supabase.ts` — inserts `bot_subscriptions` row with auto-generated `SUB-XXXXXXXX` code
-- `subscribeChannel()` added to `channelService.ts` — orchestrates the subscription flow
-- Help card updated with three new `subscribe` command entries
+`npx tsc --noEmit` passes. Last two commits:
+- `9fbae30 added bot card design` — ticketCard.ts enhanced priority visuals
+- `22194c1 added subscribe command` — self-service subscription feature
 
 **All working bot commands:**
 | Command | Function |
@@ -31,7 +27,7 @@ End state: both projects deployed to Cloud Run, gateway configured with bot URL 
 | `subscribe` | Self-service subscription (notify_created only) |
 | `subscribe all` | Subscribe to created + updated + resolved |
 | `subscribe created updated resolved` | Mix-and-match event types |
-| `register <CODE>` | Admin-code-based registration (existing) |
+| `register <CODE>` | Admin-code-based registration |
 | `unregister` | Remove subscription |
 | `configure all / priority / type` | Filter notifications |
 | `status` | Show current subscription config |
@@ -44,110 +40,118 @@ End state: both projects deployed to Cloud Run, gateway configured with bot URL 
 | `<db_name> <table> <col> <val>` | Generic MSSQL query |
 | `vibe check` | Bot health check |
 
-**Webhook endpoints (already existed, used by gateway):**
+**Webhook endpoints (called by gateway):**
 - `POST /api/notify/ticket-created` — `{ event: "ticket.created", ticket: Ticket }`
 - `POST /api/notify/ticket-updated` — `{ event: "ticket.updated", ticket: Ticket, changes: TicketChanges }`
 - `POST /api/notify` — unified endpoint, dispatches on `payload.event`
-- All three require `x-api-key` header matching `WEBHOOK_API_KEY` env var
+- All require `x-api-key` header matching `WEBHOOK_API_KEY` env var
 
-### Gateway (`C:\claude\rgmc-gateway`) — ✅ Changes complete, not committed
+### Gateway (`C:\claude\rgmc-gateway`) — ✅ Fully committed, clean working tree
 
-Python/Flask app. Changes made this session:
-- `services/it_bot.py` — **new file** with `notify_ticket_created()`, `notify_ticket_updated()`, `build_changes()`
-- `config.py` — added `IT_BOT_URL` and `IT_BOT_API_KEY` env vars
-- `controllers/issues.py` — wired bot notifications into three trigger points
-- `.env.example` — documented the two new env vars
-
-**Three trigger points in `controllers/issues.py`:**
-1. `_submit_issue()` → calls `notify_ticket_created()` after attachment upload (line ~116)
-2. `_submit_helpdesk_issue()` → calls `notify_ticket_created()` after attachment upload (line ~234)
-3. `admin_patch_issue()` → calls `notify_ticket_updated()` after successful `PATCH /issues` (line ~336)
-
-Notifications are **fire-and-forget** — exceptions are caught and logged, never propagated to the caller.
+- `e4ecc7b added bot services` (Jun 24) — committed `services/it_bot.py`, `config.py` bot vars, `controllers/issues.py` trigger points, `.env.example` docs
+- Most recent commit: `ea30334 added more metrics for analytics`
 
 ---
 
 ## Files Actively Being Edited
 
-### Bot (`C:\claude\rgmc-it-bot`)
+No files are mid-edit. Everything was committed this session.
 
-- `src/services/supabase.ts` — Added `subscribeChannelDirect()` (lines ~57–87). Creates `bot_subscriptions` row directly without requiring a pre-existing registration code. Uses `SUB-` prefix + 8-char random code to distinguish from admin codes.
-- `src/services/channelService.ts` — Added `subscribeChannel()` (lines ~74–139). Imports `subscribeChannelDirect`. `VALID_EVENTS` set declared at module level (unused directly, logic is inline in `subscribeChannel`).
-- `src/bot.ts` — Added `subscribeChannel` to imports (line 7); added `case 'subscribe':` handler (lines ~117–132).
-- `src/cards/helpCard.ts` — Added three `subscribe` command rows to the CHANNEL section (after `register` entry).
+### Changes committed this session (bot — `9fbae30`)
+
+- `src/cards/ticketCard.ts` — Enhanced priority indicators: replaced `priorityStrip()` with `priorityBadge()`. Added three new constants and updated the inline priority TextBlock in `buildTicketStatusCard`.
+
+### Changes committed in prior sessions
+
+- `src/bot.ts` — `subscribe` command handler wired in
+- `src/cards/helpCard.ts` — Three new `subscribe` command rows in CHANNEL section
+- `src/services/channelService.ts` — `subscribeChannel()` added
+- `src/services/supabase.ts` — `subscribeChannelDirect()` added
 
 ### Gateway (`C:\claude\rgmc-gateway`)
 
-- `services/it_bot.py` — **New file.** `notify_ticket_created(ticket)`, `notify_ticket_updated(ticket, changes)`, `build_changes(before, patch)`. Silent on failure.
-- `config.py` — Two new lines: `IT_BOT_URL = os.environ.get("IT_BOT_URL", "")` and `IT_BOT_API_KEY = os.environ.get("IT_BOT_API_KEY", "")`.
-- `controllers/issues.py` — Three call sites added. Each introduces `created_issue: dict | None = None` local var to safely track the row returned by Supabase POST (avoids `rows` scoping issues).
-- `.env.example` — New section `─── RGMC IT Bot` with `IT_BOT_URL` and `IT_BOT_API_KEY` docs.
+- `services/it_bot.py` — `notify_ticket_created()`, `notify_ticket_updated()`, `build_changes()` — fire-and-forget
+- `config.py` — `IT_BOT_URL` and `IT_BOT_API_KEY` env vars
+- `controllers/issues.py` — Three call sites: `_submit_issue()`, `_submit_helpdesk_issue()`, `admin_patch_issue()`
+- `.env.example` — Documented the two new env vars
 
 ---
 
 ## Failed Attempts
 
-- **`'rows' in dir()` check in `_submit_issue()`** — First attempt to reference the Supabase `rows` variable outside its scope used `'rows' in dir() and rows`. This is non-idiomatic and unreliable Python. **Fixed** by introducing `created_issue: dict | None = None` declared before the `if SUPABASE_URL` block, assigned inside it.
+- **`'rows' in dir()` check in gateway `_submit_issue()`** — First attempt to reference the Supabase `rows` variable outside its scope. Non-idiomatic and unreliable Python. Fixed by introducing `created_issue: dict | None = None` declared before the `if SUPABASE_URL` block.
+
+---
+
+## Priority Card Design (This Session)
+
+`src/cards/ticketCard.ts` — Key changes to understand:
+
+**Old `priorityStrip` (removed):** Single-row container with small icon + text, no color on text.
+
+**New `priorityBadge` (current):** ColumnSet layout inside a styled container:
+- Left col: icon at `Large` size for critical/high, `Medium` for medium/low
+- Center col: bold priority label at `Default` size for critical/high, `Small` for medium/low + subtitle line (e.g., "Requires immediate attention")
+- Right col (critical/high only): action tag — `⚠️ ACTION REQUIRED` or `⚡ URGENT`
+
+**Inline priority column in `buildTicketStatusCard`:** Now uses `color` property matching `PRIORITY_COLOR` map (`attention` / `warning` / `accent` / `good`) so the text itself renders in Teams theme red/orange/blue/green.
+
+New constants added:
+```ts
+PRIORITY_SUBTITLE  // e.g., "Requires immediate attention"
+PRIORITY_COLOR     // maps to Adaptive Card TextBlock color values
+PRIORITY_ACTION_TAG // "⚠️ ACTION REQUIRED" / "⚡ URGENT" for critical/high only
+```
 
 ---
 
 ## Next Step
 
-**Commit both projects, then set the gateway env vars to connect them.**
+**End-to-end deployment test.** Both codebases are committed and complete. The only remaining work is wiring the live deployed services together:
 
-1. Commit bot changes:
-   ```
-   cd C:\claude\rgmc-it-bot
-   git add src/services/supabase.ts src/services/channelService.ts src/bot.ts src/cards/helpCard.ts
-   git commit -m "add subscribe command and codeless channel subscription"
-   ```
-
-2. Commit gateway changes:
-   ```
-   cd C:\claude\rgmc-gateway
-   git add services/it_bot.py config.py controllers/issues.py .env.example
-   git commit -m "wire IT bot webhook notifications on ticket create and update"
-   ```
-
-3. Set these two env vars on the deployed gateway (Cloud Run → Edit & Deploy → Variables):
+1. Deploy the bot to Cloud Run (or confirm it's already deployed): note the service URL.
+2. Set these two env vars on the **gateway** Cloud Run service:
    ```
    IT_BOT_URL=https://<your-it-bot-cloud-run-url>
    IT_BOT_API_KEY=<same value as WEBHOOK_API_KEY on the bot>
    ```
-
-4. Verify end-to-end: submit a test ticket via the helpdesk form → confirm the bot posts a card to a subscribed Teams channel.
+3. Verify end-to-end: submit a test ticket via the helpdesk form → confirm the bot posts a card to a subscribed Teams channel.
+4. Test all four priority levels (critical / high / medium / low) to validate the new badge layout renders correctly in Teams.
 
 ---
 
 ## Context & Gotchas
 
 **`subscribe` vs `register` distinction:**
-- `register <CODE>` requires a pre-generated one-time code from `/api/admin/codes`. The code is validated against `bot_registration_codes` table and marked used.
-- `subscribe` generates its own internal code (`SUB-XXXXXXXX`) and inserts directly into `bot_subscriptions` without touching the codes table. No admin involvement needed.
-- Both end up as rows in `bot_subscriptions` and receive notifications identically. The `registration_code` column just holds different prefixes.
+- `register <CODE>` requires a pre-generated one-time code from `/api/admin/codes`. Validated against `bot_registration_codes` table and marked used.
+- `subscribe` generates its own internal code (`SUB-XXXXXXXX`) and inserts directly into `bot_subscriptions` without touching the codes table. No admin involvement.
+- Both end up as rows in `bot_subscriptions` and receive notifications identically.
 
 **`subscribe` default behavior — notify_created only:**
-- Bare `@RGMC IT Bot subscribe` → `notify_created: true`, `notify_updated: false`, `notify_resolved: false`
-- This is intentional: the primary use case is "alert us when a new issue is raised"
-- `subscribe all` enables all three; `subscribe updated resolved` can mix-and-match
+- Bare `subscribe` → `notify_created: true`, `notify_updated: false`, `notify_resolved: false`
+- `subscribe all` enables all three; `subscribe updated resolved` can mix-and-match.
 
-**Gateway bot notification is truly fire-and-forget:**
-- `requests.post()` with `timeout=5` — if the bot is down or slow, the gateway continues normally
-- Exceptions are `logger.warning(...)` only, never re-raised
-- If `IT_BOT_URL` or `IT_BOT_API_KEY` is not set, `_ready()` returns `False` and the function exits immediately (safe default for local dev)
+**Gateway bot notification is fire-and-forget:**
+- `requests.post()` with `timeout=5` — if bot is down or slow, gateway continues normally
+- Exceptions are `logger.warning()` only, never re-raised
+- If `IT_BOT_URL` or `IT_BOT_API_KEY` is unset, `_ready()` returns `False` and the function exits silently (safe for local dev)
 
-**`build_changes()` in `it_bot.py` converts all values to strings:**
-- The bot's `TicketChanges` type expects `{ from: string | null, to: string | null }`
+**`build_changes()` converts all values to strings:**
+- Bot's `TicketChanges` type expects `{ from: string | null, to: string | null }`
 - `build_changes` uses `str(val) if val is not None else None` — handles int fields like `request_to_department_id`
 
 **Patch context for `notify_ticket_updated`:**
-- The gateway calls `notify_ticket_updated({**issue, **patch}, changes)` where `issue` is the pre-patch row from Supabase and `patch` is the dict of changed fields
-- This constructs a "post-patch" ticket without a second DB fetch
-- The `patch` dict may include `resolved_at` (added by the gateway on resolved transitions) — this is correctly included in the merged ticket sent to the bot
+- Gateway calls `notify_ticket_updated({**issue, **patch}, changes)` where `issue` is the pre-patch row and `patch` is changed fields
+- Constructs a "post-patch" ticket without a second DB fetch
 
 **Bot webhook security:**
-- The bot checks `req.headers['x-api-key']` against `config.webhookApiKey` (= `WEBHOOK_API_KEY` env var) in `src/routes/webhook.ts:10–17`
-- 401 is returned if missing or wrong — the gateway's `_headers()` function sends this as `"x-api-key": IT_BOT_API_KEY`
+- Checks `req.headers['x-api-key']` against `config.webhookApiKey` (`WEBHOOK_API_KEY` env var) in `src/routes/webhook.ts:10–17`
+- Returns 401 if missing or wrong
+
+**Adaptive Card color limits:**
+- Adaptive Cards in Teams do not support hex colors — only named values: `default`, `dark`, `light`, `accent`, `good`, `warning`, `attention`
+- Container `style` values: `default`, `emphasis`, `good`, `attention`, `warning`
+- These map to the user's Teams theme colors, so exact shade varies per theme
 
 **Bot env vars required for full functionality:**
 ```
@@ -158,6 +162,7 @@ SUPABASE_URL         — https://eesrzpgmsrbhjeenfojq.supabase.co
 SUPABASE_SERVICE_KEY — Supabase service role key
 WEBHOOK_API_KEY      — Random secret shared with gateway as IT_BOT_API_KEY
 GATEWAY_BASE_URL     — Gateway URL for "View Ticket" buttons in cards
+BOT_BASE_URL         — Bot's own URL (for logo image in cards)
 GPT_API_KEY          — OpenAI key for `ask` command
 GCP_API_URL          — Base URL of rgmc-gcp-api for DB query commands
 ```
@@ -171,7 +176,7 @@ conversation_ref   jsonb
 tenant_id          text
 team_id            text
 channel_name       text
-registration_code  text  (admin codes: 'ABCD1234', self-subscribe: 'SUB-XXXXXXXX')
+registration_code  text  (admin: 'ABCD1234', self-subscribe: 'SUB-XXXXXXXX')
 priority_filter    text[]
 type_filter        text[]
 notify_created     bool
@@ -183,4 +188,4 @@ updated_at         timestamptz
 
 **Teams Adaptive Card size limit:** ~28KB. `MAX_TOTAL_ROWS = 15` in `src/cards/queryResultCard.ts`. Reduce if size errors occur with large result sets.
 
-**Node version:** Node 22 — native `fetch` is used in `gcpService.ts`, and a `node-fetch` shim in `app.ts` patches the botframework's internal `node-fetch` v2 calls to use native fetch instead (avoids Gunzip errors on Node 22).
+**Node version:** Node 22 — native `fetch` used in `gcpService.ts`. A `node-fetch` shim in `app.ts` patches the botframework's internal `node-fetch` v2 calls to use native fetch (avoids Gunzip errors on Node 22).

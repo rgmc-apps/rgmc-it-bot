@@ -111,6 +111,16 @@ export function buildHelpCard(): Attachment {
         'good',
       ),
       cmdRow(
+        'subscribe department <DEPT>',
+        'Subscribe and only receive tickets filed by or assigned to a specific department.',
+        'good',
+      ),
+      cmdRow(
+        'subscribe all department <DEPT>',
+        'All events, filtered to a specific department only.',
+        'good',
+      ),
+      cmdRow(
         'register <CODE>',
         'Register this channel using an admin-issued code (full setup).',
         'good',

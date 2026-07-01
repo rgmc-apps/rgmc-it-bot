@@ -116,17 +116,34 @@ export class RgmcItBot extends TeamsActivityHandler {
 
       case 'subscribe': {
         const validEvents = new Set(['created', 'updated', 'resolved', 'all']);
-        const requestedEvents = args.filter(a => validEvents.has(a));
 
-        if (args.length > 0 && requestedEvents.length === 0) {
+        // Split args at the "department" keyword:
+        // everything before it = event selectors; everything after it = dept name
+        const deptIdx = args.indexOf('department');
+        const eventArgs = deptIdx === -1 ? args : args.slice(0, deptIdx);
+        const departmentFilter = deptIdx !== -1
+          ? origArgs.slice(deptIdx + 1).join(' ').trim() || null
+          : null;
+
+        if (deptIdx !== -1 && !departmentFilter) {
           await context.sendActivity(pick([
-            `Hmm, hindi ko kilala ang event na yan. 🤔 Valid options:\n• \`subscribe\` — new issues only\n• \`subscribe all\` — all ticket events\n• \`subscribe created updated resolved\` — mix and match`,
-            `Ay, mali ang event name. 😅 Gamitin:\n• \`subscribe\` — new issues only\n• \`subscribe all\` — lahat ng events\n• \`subscribe created updated resolved\` — pinili mo`,
+            `Huy, ano ang department? 🤔 Kailangan mo ng department name pagkatapos ng \`department\`.\nExample: \`@RGMC IT Bot subscribe department IT\``,
+            `Kulang! Lagyan mo ng department name. 😅\nExample: \`@RGMC IT Bot subscribe department Finance\``,
           ]));
           return;
         }
 
-        const result = await subscribeChannel(context, requestedEvents);
+        const requestedEvents = eventArgs.filter(a => validEvents.has(a));
+
+        if (eventArgs.length > 0 && requestedEvents.length === 0) {
+          await context.sendActivity(pick([
+            `Hmm, hindi ko kilala ang event na yan. 🤔 Valid options:\n• \`subscribe\` — new issues only\n• \`subscribe all\` — all ticket events\n• \`subscribe created updated resolved\` — mix and match\n• \`subscribe department <DEPT>\` — filter by department`,
+            `Ay, mali ang event name. 😅 Gamitin:\n• \`subscribe\` — new issues only\n• \`subscribe all\` — lahat ng events\n• \`subscribe department IT\` — IT department lang`,
+          ]));
+          return;
+        }
+
+        const result = await subscribeChannel(context, requestedEvents, departmentFilter);
         await context.sendActivity(result.message);
         break;
       }
