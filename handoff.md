@@ -8,6 +8,7 @@ Build and maintain the **RGMC IT Teams Bot** (`C:\claude\rgmc-it-bot`) — a Mic
 - Lets users query ticket status, check site health, query GCP/MSSQL databases, and ask AI questions
 - Supports both admin-code-based registration (`register <CODE>`) and self-service channel subscription (`subscribe`)
 - Exposes webhook endpoints (`/api/notify/*`) that `rgmc-gateway` (Python/Flask) calls after ticket create/update events
+- Supports department-scoped subscriptions so channels only receive events relevant to their department
 
 End state: both projects deployed to Cloud Run, gateway configured with bot URL + API key, all Teams channels able to self-subscribe and receive real-time ticket alerts with visually distinct priority indicators.
 
@@ -17,7 +18,8 @@ End state: both projects deployed to Cloud Run, gateway configured with bot URL 
 
 ### Bot (`C:\claude\rgmc-it-bot`) — ✅ Fully committed, clean working tree
 
-`npx tsc --noEmit` passes. Last two commits:
+`npx tsc --noEmit` passes. Last three commits:
+- `afa7b4f added new command parameters` — `subscribe department <DEPT>` feature
 - `9fbae30 added bot card design` — ticketCard.ts enhanced priority visuals
 - `22194c1 added subscribe command` — self-service subscription feature
 
@@ -27,10 +29,12 @@ End state: both projects deployed to Cloud Run, gateway configured with bot URL 
 | `subscribe` | Self-service subscription (notify_created only) |
 | `subscribe all` | Subscribe to created + updated + resolved |
 | `subscribe created updated resolved` | Mix-and-match event types |
+| `subscribe department <DEPT>` | Subscribe, only receive tickets for a specific department |
+| `subscribe all department <DEPT>` | All events, department-scoped (multi-word dept names supported) |
 | `register <CODE>` | Admin-code-based registration |
 | `unregister` | Remove subscription |
 | `configure all / priority / type` | Filter notifications |
-| `status` | Show current subscription config |
+| `status` | Show current subscription config (now shows dept filter) |
 | `ticket <NUMBER>` | Look up ticket status |
 | `gumagana po ba yung <SITE>` | Ping site |
 | `anong site po yung <SYSTEM>` | Get site URL |
@@ -55,81 +59,64 @@ End state: both projects deployed to Cloud Run, gateway configured with bot URL 
 
 ## Files Actively Being Edited
 
-No files are mid-edit. Everything was committed this session.
+No files are mid-edit. Everything was committed this session (`afa7b4f`).
 
-### Changes committed this session (bot — `9fbae30`)
+### Changes committed this session (`afa7b4f added new command parameters`)
 
-- `src/cards/ticketCard.ts` — Enhanced priority indicators: replaced `priorityStrip()` with `priorityBadge()`. Added three new constants and updated the inline priority TextBlock in `buildTicketStatusCard`.
-
-### Changes committed in prior sessions
-
-- `src/bot.ts` — `subscribe` command handler wired in
-- `src/cards/helpCard.ts` — Three new `subscribe` command rows in CHANNEL section
-- `src/services/channelService.ts` — `subscribeChannel()` added
-- `src/services/supabase.ts` — `subscribeChannelDirect()` added
-
-### Gateway (`C:\claude\rgmc-gateway`)
-
-- `services/it_bot.py` — `notify_ticket_created()`, `notify_ticket_updated()`, `build_changes()` — fire-and-forget
-- `config.py` — `IT_BOT_URL` and `IT_BOT_API_KEY` env vars
-- `controllers/issues.py` — Three call sites: `_submit_issue()`, `_submit_helpdesk_issue()`, `admin_patch_issue()`
-- `.env.example` — Documented the two new env vars
+- `src/types/index.ts` — Added `department_filter: string | null` to `BotSubscription` interface
+- `src/services/supabase.ts` — Added `departmentFilter: string | null` param to `subscribeChannelDirect()` (stored as `department_filter` column in upsert); added `department_filter?: string | null` to `updateSubscriptionFilters()` filter type
+- `src/services/channelService.ts` — `subscribeChannel()` now accepts `departmentFilter: string | null = null` and passes it through to `subscribeChannelDirect()`; success message includes dept info if set; `getChannelStatus()` shows `department_filter` in active filters list; `matchesFilters()` expanded ticket param type to include `department` and `assigned_to`, added department check (exact match on `ticket.department` OR substring match on `ticket.assigned_to`)
+- `src/bot.ts` — `subscribe` case now parses `department <NAME>` keyword from args (multi-word dept names supported, e.g. `subscribe all department Human Resources`); validates that a name follows the keyword; passes `departmentFilter` to `subscribeChannel()`
+- `src/cards/helpCard.ts` — Added two new command rows in CHANNEL section: `subscribe department <DEPT>` and `subscribe all department <DEPT>`
 
 ---
 
 ## Failed Attempts
 
-- **`'rows' in dir()` check in gateway `_submit_issue()`** — First attempt to reference the Supabase `rows` variable outside its scope. Non-idiomatic and unreliable Python. Fixed by introducing `created_issue: dict | None = None` declared before the `if SUPABASE_URL` block.
-
----
-
-## Priority Card Design (This Session)
-
-`src/cards/ticketCard.ts` — Key changes to understand:
-
-**Old `priorityStrip` (removed):** Single-row container with small icon + text, no color on text.
-
-**New `priorityBadge` (current):** ColumnSet layout inside a styled container:
-- Left col: icon at `Large` size for critical/high, `Medium` for medium/low
-- Center col: bold priority label at `Default` size for critical/high, `Small` for medium/low + subtitle line (e.g., "Requires immediate attention")
-- Right col (critical/high only): action tag — `⚠️ ACTION REQUIRED` or `⚡ URGENT`
-
-**Inline priority column in `buildTicketStatusCard`:** Now uses `color` property matching `PRIORITY_COLOR` map (`attention` / `warning` / `accent` / `good`) so the text itself renders in Teams theme red/orange/blue/green.
-
-New constants added:
-```ts
-PRIORITY_SUBTITLE  // e.g., "Requires immediate attention"
-PRIORITY_COLOR     // maps to Adaptive Card TextBlock color values
-PRIORITY_ACTION_TAG // "⚠️ ACTION REQUIRED" / "⚡ URGENT" for critical/high only
-```
+No failed attempts this session. All changes compiled clean on first pass (`npx tsc --noEmit` — no output = success).
 
 ---
 
 ## Next Step
 
-**End-to-end deployment test.** Both codebases are committed and complete. The only remaining work is wiring the live deployed services together:
+**Add the `department_filter` column to the Supabase `bot_subscriptions` table.** The bot code is already written to read/write this column but it doesn't exist in the DB yet, so `subscribe department <DEPT>` will fail silently (Supabase upsert will ignore unknown columns depending on configuration, or error).
 
-1. Deploy the bot to Cloud Run (or confirm it's already deployed): note the service URL.
-2. Set these two env vars on the **gateway** Cloud Run service:
-   ```
-   IT_BOT_URL=https://<your-it-bot-cloud-run-url>
-   IT_BOT_API_KEY=<same value as WEBHOOK_API_KEY on the bot>
-   ```
-3. Verify end-to-end: submit a test ticket via the helpdesk form → confirm the bot posts a card to a subscribed Teams channel.
-4. Test all four priority levels (critical / high / medium / low) to validate the new badge layout renders correctly in Teams.
+Run this SQL in the Supabase dashboard (project: `eesrzpgmsrbhjeenfojq`):
+
+```sql
+ALTER TABLE bot_subscriptions ADD COLUMN department_filter text DEFAULT NULL;
+```
+
+After that, do an end-to-end test:
+1. In a Teams channel, run: `@RGMC IT Bot subscribe department IT`
+2. Verify the bot confirms with the department filter in the success message
+3. Run `@RGMC IT Bot status` — confirm `• Department: IT` shows under Active filters
+4. Submit a test ticket from an IT department user via the helpdesk form
+5. Confirm the channel receives the notification; submit one from a different department and confirm it is NOT delivered
 
 ---
 
 ## Context & Gotchas
 
+**Department filter matching logic (`channelService.ts:260–265`):**
+- Exact case-insensitive match on `ticket.department` (the filer's department column from the `issues` table)
+- OR substring match on `ticket.assigned_to` (covers cases like "IT Support Team" assigned_to values)
+- The `Ticket.department` field is the requester's department, not an "assigned department" — there is no `assigned_department` column in the issues table. If the gateway adds one later, `matchesFilters` should be updated to check it.
+
+**Subscribe arg parsing order (`bot.ts:117–148`):**
+- `department` keyword must appear AFTER any event selectors: `subscribe created department IT` ✅
+- Everything after `department` is taken as the dept name via `origArgs.slice(deptIdx + 1).join(' ')` — supports multi-word names
+- If `department` keyword is present but no name follows, the bot replies with an error
+
 **`subscribe` vs `register` distinction:**
-- `register <CODE>` requires a pre-generated one-time code from `/api/admin/codes`. Validated against `bot_registration_codes` table and marked used.
-- `subscribe` generates its own internal code (`SUB-XXXXXXXX`) and inserts directly into `bot_subscriptions` without touching the codes table. No admin involvement.
+- `register <CODE>` requires a pre-generated one-time code from `/api/admin/codes`. Validated against `bot_registration_codes` table and marked used. Does NOT support `department_filter` — if needed, the user must `configure` after registration.
+- `subscribe` generates its own internal code (`SUB-XXXXXXXX`) and inserts directly into `bot_subscriptions` with `department_filter`. No admin involvement.
 - Both end up as rows in `bot_subscriptions` and receive notifications identically.
 
 **`subscribe` default behavior — notify_created only:**
 - Bare `subscribe` → `notify_created: true`, `notify_updated: false`, `notify_resolved: false`
 - `subscribe all` enables all three; `subscribe updated resolved` can mix-and-match.
+- `subscribe department IT` → notify_created only + dept filter (wantsAll logic at `channelService.ts:96`)
 
 **Gateway bot notification is fire-and-forget:**
 - `requests.post()` with `timeout=5` — if bot is down or slow, gateway continues normally
@@ -167,7 +154,7 @@ GPT_API_KEY          — OpenAI key for `ask` command
 GCP_API_URL          — Base URL of rgmc-gcp-api for DB query commands
 ```
 
-**Supabase `bot_subscriptions` table shape:**
+**Supabase `bot_subscriptions` table shape (after the required ALTER TABLE):**
 ```
 id                 uuid PK
 channel_id         text UNIQUE
@@ -179,6 +166,7 @@ channel_name       text
 registration_code  text  (admin: 'ABCD1234', self-subscribe: 'SUB-XXXXXXXX')
 priority_filter    text[]
 type_filter        text[]
+department_filter  text   ← NEW — must be added via ALTER TABLE
 notify_created     bool
 notify_updated     bool
 notify_resolved    bool

@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { CloudAdapter } from 'botbuilder';
-import { notifyTicketCreated, notifyTicketUpdated } from '../services/notificationService';
-import { NotifyTicketPayload } from '../types';
+import { notifyTicketCreated, notifyTicketUpdated, notifyOutageDetected } from '../services/notificationService';
+import { NotifyTicketPayload, NotifyOutagePayload } from '../types';
 import { config } from '../config';
 
 export function createWebhookRouter(adapter: CloudAdapter): Router {
@@ -55,6 +55,27 @@ export function createWebhookRouter(adapter: CloudAdapter): Router {
     } catch (err) {
       console.error('ticket-updated notify error:', err);
       res.status(500).json({ error: 'Failed to dispatch notification' });
+    }
+  });
+
+  /**
+   * POST /api/notify/outage-detected
+   * Called by rgmc-gateway when an outage is detected.
+   *
+   * Body: { event: "outage.detected", outage: Outage, issue_count: number }
+   */
+  router.post('/outage-detected', async (req: Request, res: Response) => {
+    const payload = req.body as NotifyOutagePayload;
+    if (!payload?.outage) {
+      res.status(400).json({ error: 'Missing outage in payload' });
+      return;
+    }
+    try {
+      await notifyOutageDetected(payload.outage, payload.issue_count ?? 2, adapter);
+      res.json({ success: true, message: 'Outage notification dispatched' });
+    } catch (err) {
+      console.error('outage-detected notify error:', err);
+      res.status(500).json({ error: 'Failed to dispatch outage notification' });
     }
   });
 

@@ -69,6 +69,26 @@ export interface NotifyTicketPayload {
   changes?: TicketChanges;
 }
 
+export interface Outage {
+  id: string;
+  site_name: string;
+  error_code: string;
+  status: 'open' | 'ongoing' | 'resolved';
+  issue_ids: string[];
+  notification_count: number;
+  triggered_at: string;
+  resolved_at: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface NotifyOutagePayload {
+  event: 'outage.detected';
+  outage: Outage;
+  issue_count: number;
+}
+
 export interface System {
   id: string;
   name: string;

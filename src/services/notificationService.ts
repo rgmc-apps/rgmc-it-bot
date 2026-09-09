@@ -2,7 +2,8 @@ import { CloudAdapter, MessageFactory, TurnContext } from 'botbuilder';
 import { getAllSubscriptions } from './supabase';
 import { matchesFilters } from './channelService';
 import { buildTicketCreatedCard, buildTicketUpdatedCard } from '../cards/ticketCard';
-import { Ticket, TicketChanges } from '../types';
+import { buildOutageCard } from '../cards/outageCard';
+import { Ticket, TicketChanges, Outage } from '../types';
 import { config } from '../config';
 
 async function sendToSubscription(
@@ -50,6 +51,22 @@ export async function notifyTicketUpdated(
   await Promise.allSettled(
     subscriptions
       .filter((s) => matchesFilters(s, ticket, eventType))
+      .map((s) => sendToSubscription(adapter, s, card))
+  );
+}
+
+export async function notifyOutageDetected(
+  outage: Outage,
+  issueCount: number,
+  adapter: CloudAdapter
+): Promise<void> {
+  const subscriptions = await getAllSubscriptions();
+  const card = buildOutageCard(outage, issueCount);
+
+  // Send to all subscriptions that have outage notifications (notify_created serves as the general flag)
+  await Promise.allSettled(
+    subscriptions
+      .filter((s) => s.notify_created)
       .map((s) => sendToSubscription(adapter, s, card))
   );
 }
