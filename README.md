@@ -95,7 +95,7 @@ Per-channel configurable filters:
 
 ### <span style="color:#2a9d8f">💡 Feature Requests</span>
 
-- `@RGMC IT Bot feature <system tag> <request> | <description>` creates a feature-request ticket on the gateway against the matching system
+- `@RGMC IT Bot feature <system tag> <request> --- <description>` creates a feature-request ticket on the gateway against the matching system
 - The system is looked up by its `tags` column (same tag matching used by `gumagana po ba yung <SITE>`)
 - The reporter is set to the Teams display name of whoever typed the command; the description is appended with a note that it came from a Teams chat
 - Other required ticket fields (company, email, viber) are filled with placeholders since there's no helpdesk form behind this — see `rgmc-gateway Integration` below
@@ -127,7 +127,7 @@ All commands are issued by **@mentioning** the bot in a Teams channel or chat.
 | `@RGMC IT Bot register <CODE>` | Register this channel to receive ticket notifications using the provided one-time code |
 | `@RGMC IT Bot unregister` | Remove this channel from ticket notifications |
 | `@RGMC IT Bot ticket <TICKET-NUMBER>` | Look up the current status of a ticket (e.g. `ticket IT-00042`) |
-| `@RGMC IT Bot feature <system tag> <request> \| <description>` | Creates a feature-request ticket against a system (looked up by tag) |
+| `@RGMC IT Bot feature <system tag> <request> --- <description>` | Creates a feature-request ticket against a system (looked up by tag) |
 | `@RGMC IT Bot configure all` | Reset all filters — receive notifications for every ticket |
 | `@RGMC IT Bot configure priority high critical` | Filter notifications to only high / critical priority tickets |
 | `@RGMC IT Bot configure type incident service_request` | Filter notifications by ticket type |

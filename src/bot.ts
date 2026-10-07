@@ -205,15 +205,15 @@ export class RgmcItBot extends TeamsActivityHandler {
 
         if (!systemTag || !rest) {
           await context.sendActivity(pick([
-            `Kulang ang details! 😅 Format: \`feature <system tag> <request> | <description>\`\nExample: \`@RGMC IT Bot feature travelandexpense Add dark mode | Users have been asking for a dark theme option in settings.\``,
-            `Hala, konting detalye pa! 🤔 Format: \`feature <system tag> <request> | <description>\`\nExample: \`@RGMC IT Bot feature portal Export to Excel | Add an export button on the reports page.\``,
+            `Kulang ang details! 😅 Format: \`feature <system tag> <request> --- <description>\`\nExample: \`@RGMC IT Bot feature travelandexpense Add dark mode --- Users have been asking for a dark theme option in settings.\``,
+            `Hala, konting detalye pa! 🤔 Format: \`feature <system tag> <request> --- <description>\`\nExample: \`@RGMC IT Bot feature portal Export to Excel --- Add an export button on the reports page.\``,
           ]));
           return;
         }
 
-        const pipeIdx    = rest.indexOf('|');
-        const title       = (pipeIdx === -1 ? rest : rest.slice(0, pipeIdx)).trim();
-        const description = (pipeIdx === -1 ? rest : rest.slice(pipeIdx + 1)).trim() || title;
+        const sepIdx      = rest.indexOf('---');
+        const title       = (sepIdx === -1 ? rest : rest.slice(0, sepIdx)).trim();
+        const description = (sepIdx === -1 ? rest : rest.slice(sepIdx + 3)).trim() || title;
 
         await context.sendActivities([{ type: 'typing' }]);
         const result = await submitFeatureRequest(context, systemTag, title, description);

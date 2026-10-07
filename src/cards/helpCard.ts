@@ -185,7 +185,7 @@ export function buildHelpCard(): Attachment {
       // ── 💡 Feature requests ──────────────────────────────────────────────────
       sectionHeader('💡', 'FEATURE REQUESTS', 'warning'),
       cmdRow(
-        'feature <system tag> <request> | <description>',
+        'feature <system tag> <request> --- <description>',
         'Creates an IT ticket for a feature request against a system, tagged with who asked.',
         'warning',
       ),
