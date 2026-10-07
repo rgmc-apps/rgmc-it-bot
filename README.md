@@ -93,12 +93,28 @@ Per-channel configurable filters:
 - **Event toggles** — independently enable/disable created, updated, and resolved notifications
 - `configure all` resets to receive everything
 
+### <span style="color:#2a9d8f">💡 Feature Requests</span>
+
+- `@RGMC IT Bot feature <system tag> <request> | <description>` creates a feature-request ticket on the gateway against the matching system
+- The system is looked up by its `tags` column (same tag matching used by `gumagana po ba yung <SITE>`)
+- The reporter is set to the Teams display name of whoever typed the command; the description is appended with a note that it came from a Teams chat
+- Other required ticket fields (company, email, viber) are filled with placeholders since there's no helpdesk form behind this — see `rgmc-gateway Integration` below
+
+### <span style="color:#2a9d8f">💬 Personal Mention & Assignment DMs</span>
+
+- Add **RGMC IT Bot** personally in Teams (1:1 chat) and it auto-links your account by matching your Teams email to your RGMC Gateway account
+- Once linked, you get a direct Teams DM whenever:
+  - Someone **@mentions** you in an issue, epic, or dev item comment
+  - You're **assigned** an issue, dev item, or task
+- No channel or admin code needed — it's self-serve, per user
+
 ### <span style="color:#2a9d8f">🛡️ Admin API</span>
 
 Secured with `X-API-Key` header:
 - Generate new registration codes (with optional label and expiry)
 - List all codes and their usage state
 - List all registered channel subscriptions
+- List all users linked for personal DM notifications
 
 ---
 
@@ -111,11 +127,21 @@ All commands are issued by **@mentioning** the bot in a Teams channel or chat.
 | `@RGMC IT Bot register <CODE>` | Register this channel to receive ticket notifications using the provided one-time code |
 | `@RGMC IT Bot unregister` | Remove this channel from ticket notifications |
 | `@RGMC IT Bot ticket <TICKET-NUMBER>` | Look up the current status of a ticket (e.g. `ticket IT-00042`) |
+| `@RGMC IT Bot feature <system tag> <request> \| <description>` | Creates a feature-request ticket against a system (looked up by tag) |
 | `@RGMC IT Bot configure all` | Reset all filters — receive notifications for every ticket |
 | `@RGMC IT Bot configure priority high critical` | Filter notifications to only high / critical priority tickets |
 | `@RGMC IT Bot configure type incident service_request` | Filter notifications by ticket type |
 | `@RGMC IT Bot status` | Show this channel's registration state and active filters |
 | `@RGMC IT Bot help` | Display the full command reference |
+
+> 📌 **Personal (1:1 chat) commands** — no `@mention` needed in a direct chat with the bot:
+
+| Command | Description |
+|---|---|
+| `link` | Link your RGMC Gateway account for mention/assignment DMs (auto-run when you add the bot personally) — matched by your Teams email |
+| `subscribe me <username>` | Link this chat directly to a specific RGMC Gateway username, bypassing the email match |
+| `unlink` | Stop receiving mention/assignment DMs |
+| `whoami` | Check whether your account is linked |
 
 > 📌 **Valid priority values:** `low`, `medium`, `high`, `critical`
 >
@@ -391,6 +417,9 @@ All webhook endpoints require `X-API-Key: <WEBHOOK_API_KEY>` header.
 | `POST` | `/api/notify` | Unified endpoint — dispatches based on `event` field |
 | `POST` | `/api/notify/ticket-created` | Notify registered channels of a new ticket |
 | `POST` | `/api/notify/ticket-updated` | Notify registered channels of a ticket update |
+| `POST` | `/api/notify/outage-detected` | Notify registered channels of a detected outage |
+| `POST` | `/api/notify/mention` | DM a user who was `@mentioned` in a comment |
+| `POST` | `/api/notify/assignment` | DM a user who was assigned an issue, dev item, or task |
 
 **`POST /api/notify` request body:**
 
@@ -434,6 +463,40 @@ All webhook endpoints require `X-API-Key: <WEBHOOK_API_KEY>` header.
     "status": { "from": "pending", "to": "in_progress" },
     "assigned_to": { "from": null, "to": "erwin.arellano" }
   }
+}
+```
+
+**`POST /api/notify/mention` request body:**
+
+```json
+{
+  "event": "mention.created",
+  "mentioned_username": "erwin.arellano",
+  "by_username": "juan.delacruz",
+  "by_display_name": "Juan Dela Cruz",
+  "entity_type": "issue",
+  "entity_id": "uuid",
+  "entity_label": "IT-00042",
+  "comment_excerpt": "@erwin.arellano can you take a look at this?",
+  "url": "https://your-gateway.run.app/admin/issues/uuid"
+}
+```
+
+`entity_type` is one of `issue`, `epic`, `dev_item`, `task`. No-op (silently skipped) if the mentioned user hasn't linked a personal chat, or if they mentioned themselves.
+
+**`POST /api/notify/assignment` request body:**
+
+```json
+{
+  "event": "assignment.created",
+  "assigned_username": "erwin.arellano",
+  "assigned_by": "juan.delacruz",
+  "assigned_by_display_name": "Juan Dela Cruz",
+  "entity_type": "dev_item",
+  "entity_id": "uuid",
+  "entity_label": "DI-0012",
+  "title": "Fix login timeout on travel portal",
+  "url": "https://your-gateway.run.app/developer"
 }
 ```
 
@@ -535,6 +598,43 @@ RGMC_BOT_API_KEY=same-value-as-WEBHOOK_API_KEY-in-bot
 ```
 
 Call `_notify_bot("ticket.created", ticket_row)` after a successful insert, and `_notify_bot("ticket.updated", updated_ticket, changes_dict)` in `admin_patch_issue`.
+
+> 📌 This is already wired up in `rgmc-gateway`'s `services/it_bot.py`, including `notify_mention(...)` (called wherever a comment is posted, for every `@username` token found in it) and `notify_assignment(...)` (called wherever `assigned_to` changes on an issue, dev item, or user task).
+
+### <span style="color:#2a9d8f">Reverse direction — bot → gateway (feature requests)</span>
+
+The `feature` command calls **into** `rgmc-gateway` to create a ticket, using the *same* shared secret in reverse (the bot sends `X-API-Key: WEBHOOK_API_KEY`, which the gateway checks against its own `IT_BOT_API_KEY` — the two must match).
+
+This is already implemented as `POST /api/webhooks/bot-feature-request` in `rgmc-gateway`'s `controllers/webhooks.py`:
+
+```python
+@webhooks_bp.post("/api/webhooks/bot-feature-request")
+def bot_feature_request():
+    secret = request.headers.get("X-API-Key", "")
+    if not IT_BOT_API_KEY or not hmac.compare_digest(secret, IT_BOT_API_KEY):
+        return jsonify({"error": "Unauthorized"}), 401
+    # ...looks up the system by tag, creates an /issues row, notifies subscribed
+    # Teams channels via notify_ticket_created(), and returns the ticket_number.
+```
+
+**Request body (sent by this bot):**
+
+```json
+{
+  "system_tag": "travelandexpense",
+  "title": "Add dark mode",
+  "description": "Users have been asking for a dark theme option in settings.",
+  "reporter_name": "Juan Dela Cruz"
+}
+```
+
+**Response:**
+
+```json
+{ "success": true, "ticket_number": "IT-00099", "issue_id": "uuid" }
+```
+
+Since there's no helpdesk form behind a chat command, the created issue fills `company_name`, `email`, and `viber_number` with placeholder values — only `site_name` (resolved from the system's tag), `employee_name` (the Teams sender's display name), and the description are real.
 
 ---
 
@@ -668,6 +768,18 @@ The bot sends three card variants, all using the Adaptive Card schema v1.4:
 | `notify_created` | `boolean` | Send on ticket creation |
 | `notify_updated` | `boolean` | Send on ticket update |
 | `notify_resolved` | `boolean` | Send on ticket resolution |
+
+### <span style="color:#2a9d8f">BotUserLink (maps to `bot_user_links` table)</span>
+
+| Field | Type | Description |
+|---|---|---|
+| `id` | `string` (UUID) | Primary key |
+| `username` | `string` | RGMC Gateway `users.username` — unique per link |
+| `email` | `string \| null` | Teams email used to resolve the Gateway account |
+| `aad_object_id` | `string \| null` | Azure AD object id of the Teams user |
+| `service_url` | `string` | Bot Framework service URL (region-specific) |
+| `conversation_ref` | `object` (JSONB) | Full `ConversationReference` for the 1:1 chat |
+| `tenant_id` | `string \| null` | Azure tenant ID |
 
 ### <span style="color:#2a9d8f">RegistrationCode (maps to `bot_registration_codes` table)</span>
 

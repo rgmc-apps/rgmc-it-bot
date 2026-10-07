@@ -132,9 +132,12 @@ function registerRoutes(): void {
     console.log('  POST /api/notify');
     console.log('  POST /api/notify/ticket-created');
     console.log('  POST /api/notify/ticket-updated');
+    console.log('  POST /api/notify/mention');
+    console.log('  POST /api/notify/assignment');
     console.log('  POST /api/admin/codes');
     console.log('  GET  /api/admin/codes');
     console.log('  GET  /api/admin/subscriptions');
+    console.log('  GET  /api/admin/user-links');
     console.log('  GET  /health');
     console.log('  GET  /ping');
 

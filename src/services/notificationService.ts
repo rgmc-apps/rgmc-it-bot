@@ -1,9 +1,11 @@
 import { CloudAdapter, MessageFactory, TurnContext } from 'botbuilder';
-import { getAllSubscriptions } from './supabase';
+import { getAllSubscriptions, getUserLinkByUsername } from './supabase';
 import { matchesFilters } from './channelService';
 import { buildTicketCreatedCard, buildTicketUpdatedCard } from '../cards/ticketCard';
 import { buildOutageCard } from '../cards/outageCard';
-import { Ticket, TicketChanges, Outage } from '../types';
+import { buildMentionCard } from '../cards/mentionCard';
+import { buildAssignmentCard } from '../cards/assignmentCard';
+import { Ticket, TicketChanges, Outage, MentionPayload, AssignmentPayload } from '../types';
 import { config } from '../config';
 
 async function sendToSubscription(
@@ -53,6 +55,22 @@ export async function notifyTicketUpdated(
       .filter((s) => matchesFilters(s, ticket, eventType))
       .map((s) => sendToSubscription(adapter, s, card))
   );
+}
+
+export async function notifyMention(payload: MentionPayload, adapter: CloudAdapter): Promise<void> {
+  if (payload.mentioned_username.toLowerCase() === payload.by_username.toLowerCase()) return;
+  const link = await getUserLinkByUsername(payload.mentioned_username);
+  if (!link) return; // not linked to a personal Teams chat — nothing to send
+  const card = buildMentionCard(payload);
+  await sendToSubscription(adapter, link, card);
+}
+
+export async function notifyAssignment(payload: AssignmentPayload, adapter: CloudAdapter): Promise<void> {
+  if (payload.assigned_username.toLowerCase() === payload.assigned_by.toLowerCase()) return;
+  const link = await getUserLinkByUsername(payload.assigned_username);
+  if (!link) return;
+  const card = buildAssignmentCard(payload);
+  await sendToSubscription(adapter, link, card);
 }
 
 export async function notifyOutageDetected(

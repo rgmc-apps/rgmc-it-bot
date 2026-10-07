@@ -151,11 +151,42 @@ export function buildHelpCard(): Attachment {
         'good',
       ),
 
+      // ── 🔔 Personal notifications ────────────────────────────────────────────
+      sectionHeader('🔔', 'PERSONAL NOTIFICATIONS (DM ME)', 'good'),
+      cmdRow(
+        'link',
+        'Link your RGMC Gateway account (1:1 chat only) — auto-linked when you add me personally.',
+        'good',
+      ),
+      cmdRow(
+        'unlink',
+        'Stop getting mention/assignment DMs.',
+        'attention',
+      ),
+      cmdRow(
+        'whoami',
+        'Check whether your account is linked.',
+        'good',
+      ),
+      cmdRow(
+        'subscribe me <username>',
+        'Link this 1:1 chat directly to a specific RGMC Gateway username.',
+        'good',
+      ),
+
       // ── 🎫 Tickets ───────────────────────────────────────────────────────────
       sectionHeader('🎫', 'TICKETS', 'warning'),
       cmdRow(
         'ticket <NUMBER>',
         'Look up the status of a ticket (e.g. ticket IT-0042).',
+        'warning',
+      ),
+
+      // ── 💡 Feature requests ──────────────────────────────────────────────────
+      sectionHeader('💡', 'FEATURE REQUESTS', 'warning'),
+      cmdRow(
+        'feature <system tag> <request> | <description>',
+        'Creates an IT ticket for a feature request against a system, tagged with who asked.',
         'warning',
       ),
 

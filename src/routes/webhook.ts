@@ -1,7 +1,13 @@
 import { Router, Request, Response } from 'express';
 import { CloudAdapter } from 'botbuilder';
-import { notifyTicketCreated, notifyTicketUpdated, notifyOutageDetected } from '../services/notificationService';
-import { NotifyTicketPayload, NotifyOutagePayload } from '../types';
+import {
+  notifyTicketCreated,
+  notifyTicketUpdated,
+  notifyOutageDetected,
+  notifyMention,
+  notifyAssignment,
+} from '../services/notificationService';
+import { NotifyTicketPayload, NotifyOutagePayload, MentionPayload, AssignmentPayload } from '../types';
 import { config } from '../config';
 
 export function createWebhookRouter(adapter: CloudAdapter): Router {
@@ -80,22 +86,76 @@ export function createWebhookRouter(adapter: CloudAdapter): Router {
   });
 
   /**
+   * POST /api/notify/mention
+   * Called by rgmc-gateway when a user is @mentioned in a comment.
+   *
+   * Body: MentionPayload
+   */
+  router.post('/mention', async (req: Request, res: Response) => {
+    const payload = req.body as MentionPayload;
+    if (!payload?.mentioned_username || !payload?.entity_type) {
+      res.status(400).json({ error: 'Missing mentioned_username or entity_type in payload' });
+      return;
+    }
+    try {
+      await notifyMention(payload, adapter);
+      res.json({ success: true, message: 'Notification dispatched' });
+    } catch (err) {
+      console.error('mention notify error:', err);
+      res.status(500).json({ error: 'Failed to dispatch notification' });
+    }
+  });
+
+  /**
+   * POST /api/notify/assignment
+   * Called by rgmc-gateway when an issue, dev item, or task is assigned to a user.
+   *
+   * Body: AssignmentPayload
+   */
+  router.post('/assignment', async (req: Request, res: Response) => {
+    const payload = req.body as AssignmentPayload;
+    if (!payload?.assigned_username || !payload?.entity_type) {
+      res.status(400).json({ error: 'Missing assigned_username or entity_type in payload' });
+      return;
+    }
+    try {
+      await notifyAssignment(payload, adapter);
+      res.json({ success: true, message: 'Notification dispatched' });
+    } catch (err) {
+      console.error('assignment notify error:', err);
+      res.status(500).json({ error: 'Failed to dispatch notification' });
+    }
+  });
+
+  /**
    * POST /api/notify
    * Unified endpoint — dispatches based on payload.event field.
    *
-   * Body: NotifyTicketPayload (event + ticket + optional changes)
+   * Body: NotifyTicketPayload | MentionPayload | AssignmentPayload (event + ...)
    */
   router.post('/', async (req: Request, res: Response) => {
-    const payload = req.body as NotifyTicketPayload;
-    if (!payload?.ticket || !payload?.event) {
-      res.status(400).json({ error: 'Missing event or ticket in payload' });
+    const payload = req.body as { event?: string } & Record<string, unknown>;
+    if (!payload?.event) {
+      res.status(400).json({ error: 'Missing event in payload' });
       return;
     }
     try {
       if (payload.event === 'ticket.created') {
-        await notifyTicketCreated(payload.ticket, adapter);
+        const p = payload as unknown as NotifyTicketPayload;
+        if (!p.ticket) { res.status(400).json({ error: 'Missing ticket in payload' }); return; }
+        await notifyTicketCreated(p.ticket, adapter);
       } else if (payload.event === 'ticket.updated') {
-        await notifyTicketUpdated(payload.ticket, payload.changes || {}, adapter);
+        const p = payload as unknown as NotifyTicketPayload;
+        if (!p.ticket) { res.status(400).json({ error: 'Missing ticket in payload' }); return; }
+        await notifyTicketUpdated(p.ticket, p.changes || {}, adapter);
+      } else if (payload.event === 'mention.created') {
+        const p = payload as unknown as MentionPayload;
+        if (!p.mentioned_username) { res.status(400).json({ error: 'Missing mentioned_username in payload' }); return; }
+        await notifyMention(p, adapter);
+      } else if (payload.event === 'assignment.created') {
+        const p = payload as unknown as AssignmentPayload;
+        if (!p.assigned_username) { res.status(400).json({ error: 'Missing assigned_username in payload' }); return; }
+        await notifyAssignment(p, adapter);
       } else {
         res.status(400).json({ error: `Unknown event: ${payload.event}` });
         return;

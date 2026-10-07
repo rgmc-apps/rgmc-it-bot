@@ -58,6 +58,34 @@ ALTER TABLE public.bot_subscriptions ENABLE ROW LEVEL SECURITY;
 
 
 -- ─────────────────────────────────────────────────────────────────────────────
+-- Per-user links
+-- One row per RGMC user who has linked a personal (1:1) chat with the bot.
+-- Used to DM a specific user — @mentions and issue/dev item/task assignments —
+-- instead of posting to a shared channel.
+-- ─────────────────────────────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS public.bot_user_links (
+    id                  UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+
+    username            TEXT        NOT NULL UNIQUE,   -- rgmc-gateway users.username
+    email               TEXT,
+    aad_object_id       TEXT,
+
+    -- Teams identifiers for the 1:1 conversation
+    service_url         TEXT        NOT NULL,
+    conversation_ref    JSONB       NOT NULL,           -- full ConversationReference for proactive messages
+    tenant_id           TEXT,
+
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_bot_user_links_username ON public.bot_user_links (username);
+
+ALTER TABLE public.bot_user_links ENABLE ROW LEVEL SECURITY;
+
+
+-- ─────────────────────────────────────────────────────────────────────────────
 -- issues table additions
 -- These columns are expected by the bot's ticket status card.
 -- If the issues table was created by rgmc-gateway's supabase_setup.sql,

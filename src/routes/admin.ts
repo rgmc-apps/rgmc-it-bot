@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { createRegistrationCode, listRegistrationCodes, getAllSubscriptions } from '../services/supabase';
+import { createRegistrationCode, listRegistrationCodes, getAllSubscriptions, listUserLinks } from '../services/supabase';
 import { config } from '../config';
 
 export function createAdminRouter(): Router {
@@ -58,6 +58,22 @@ export function createAdminRouter(): Router {
         notify_updated: s.notify_updated,
         notify_resolved: s.notify_resolved,
         created_at: s.created_at,
+      }))
+    );
+  });
+
+  /**
+   * GET /api/admin/user-links
+   * List all users linked for personal (DM) mention/assignment notifications.
+   */
+  router.get('/user-links', async (_req: Request, res: Response) => {
+    const links = await listUserLinks();
+    res.json(
+      links.map((l) => ({
+        username: l.username,
+        email: l.email,
+        created_at: l.created_at,
+        updated_at: l.updated_at,
       }))
     );
   });

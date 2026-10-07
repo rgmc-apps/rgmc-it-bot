@@ -7,6 +7,14 @@ import {
   configureFilters,
   getChannelStatus,
 } from './services/channelService';
+import {
+  linkPersonalChat,
+  linkPersonalChatByUsername,
+  unlinkPersonalChat,
+  getLinkStatusMessage,
+  autoLinkOnInstall,
+} from './services/userLinkService';
+import { submitFeatureRequest } from './services/featureRequestService';
 import { buildTicketStatusCard } from './cards/ticketCard';
 import { buildSiteStatusCard } from './cards/siteStatusCard';
 import { buildSiteInfoCard } from './cards/siteInfoCard';
@@ -69,8 +77,14 @@ export class RgmcItBot extends TeamsActivityHandler {
     });
 
     this.onMembersAdded(async (context, next) => {
+      const isPersonal = context.activity.conversation?.conversationType === 'personal';
       for (const member of context.activity.membersAdded || []) {
-        if (member.id !== context.activity.recipient.id) {
+        if (member.id === context.activity.recipient.id) continue;
+        if (isPersonal) {
+          // Bot was just added to a 1:1 chat — try to auto-link the user's
+          // RGMC Gateway account by their Teams email for mention/assignment DMs.
+          await autoLinkOnInstall(context);
+        } else {
           await context.sendActivity(pick([
             `👋 Hoy hoy! Ako si **RGMC IT Bot** — ang pinaka-reliable na bot sa IT department! 🤖\n\nI-type mo ang \`@RGMC IT Bot help\` para makita ang lahat ng kaya ko.`,
             `👋 Uy, may bago! Welcome! Ako si **RGMC IT Bot**, laging nandito para sa inyo. 💪\n\nI-type mo ang \`@RGMC IT Bot help\` para sa listahan ng commands.`,
@@ -115,6 +129,20 @@ export class RgmcItBot extends TeamsActivityHandler {
       }
 
       case 'subscribe': {
+        if (args[0] === 'me') {
+          const targetUsername = origArgs[1];
+          if (!targetUsername) {
+            await context.sendActivity(pick([
+              `Kulang ka ng username! 😅 Example: \`@RGMC IT Bot subscribe me erwin.arellano\``,
+              `Ano namang username? 🤔 Example: \`@RGMC IT Bot subscribe me erwin.arellano\``,
+            ]));
+            return;
+          }
+          const result = await linkPersonalChatByUsername(context, targetUsername);
+          await context.sendActivity(result.message);
+          break;
+        }
+
         const validEvents = new Set(['created', 'updated', 'resolved', 'all']);
 
         // Split args at the "department" keyword:
@@ -171,6 +199,28 @@ export class RgmcItBot extends TeamsActivityHandler {
         break;
       }
 
+      case 'feature': {
+        const systemTag = origArgs[0];
+        const rest       = origArgs.slice(1).join(' ').trim();
+
+        if (!systemTag || !rest) {
+          await context.sendActivity(pick([
+            `Kulang ang details! 😅 Format: \`feature <system tag> <request> | <description>\`\nExample: \`@RGMC IT Bot feature travelandexpense Add dark mode | Users have been asking for a dark theme option in settings.\``,
+            `Hala, konting detalye pa! 🤔 Format: \`feature <system tag> <request> | <description>\`\nExample: \`@RGMC IT Bot feature portal Export to Excel | Add an export button on the reports page.\``,
+          ]));
+          return;
+        }
+
+        const pipeIdx    = rest.indexOf('|');
+        const title       = (pipeIdx === -1 ? rest : rest.slice(0, pipeIdx)).trim();
+        const description = (pipeIdx === -1 ? rest : rest.slice(pipeIdx + 1)).trim() || title;
+
+        await context.sendActivities([{ type: 'typing' }]);
+        const result = await submitFeatureRequest(context, systemTag, title, description);
+        await context.sendActivity(result.message);
+        break;
+      }
+
       case 'configure': {
         const result = await configureFilters(context, args);
         await context.sendActivity(result.message);
@@ -180,6 +230,24 @@ export class RgmcItBot extends TeamsActivityHandler {
       case 'status': {
         const statusMessage = await getChannelStatus(context);
         await context.sendActivity(statusMessage);
+        break;
+      }
+
+      case 'link': {
+        const result = await linkPersonalChat(context);
+        await context.sendActivity(result.message);
+        break;
+      }
+
+      case 'unlink': {
+        const result = await unlinkPersonalChat(context);
+        await context.sendActivity(result.message);
+        break;
+      }
+
+      case 'whoami': {
+        const message = await getLinkStatusMessage(context);
+        await context.sendActivity(message);
         break;
       }
 

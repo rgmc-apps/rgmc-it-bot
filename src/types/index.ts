@@ -63,6 +63,44 @@ export interface RegistrationCode {
   expires_at: string | null;
 }
 
+export interface BotUserLink {
+  id: string;
+  username: string;
+  email: string | null;
+  aad_object_id: string | null;
+  service_url: string;
+  conversation_ref: Partial<ConversationReference>;
+  tenant_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type MentionEntityType = 'issue' | 'epic' | 'dev_item' | 'task';
+
+export interface MentionPayload {
+  event: 'mention.created';
+  mentioned_username: string;
+  by_username: string;
+  by_display_name?: string | null;
+  entity_type: MentionEntityType;
+  entity_id: string;
+  entity_label: string;
+  comment_excerpt: string;
+  url?: string | null;
+}
+
+export interface AssignmentPayload {
+  event: 'assignment.created';
+  assigned_username: string;
+  assigned_by: string;
+  assigned_by_display_name?: string | null;
+  entity_type: MentionEntityType;
+  entity_id: string;
+  entity_label: string;
+  title: string;
+  url?: string | null;
+}
+
 export interface NotifyTicketPayload {
   event: 'ticket.created' | 'ticket.updated';
   ticket: Ticket;

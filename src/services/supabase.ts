@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { ConversationReference } from 'botbuilder';
 import { config } from '../config';
-import { BotSubscription, RegistrationCode, System, Ticket } from '../types';
+import { BotSubscription, BotUserLink, RegistrationCode, System, Ticket } from '../types';
 
 export const db = createClient(config.supabaseUrl, config.supabaseKey);
 
@@ -191,6 +191,94 @@ export async function listRegistrationCodes(): Promise<RegistrationCode[]> {
     .order('created_at', { ascending: false });
   if (error || !data) return [];
   return data as RegistrationCode[];
+}
+
+// ─── Per-user links (personal DM notifications) ───────────────────────────────
+
+export async function usernameExists(username: string): Promise<boolean> {
+  const { data, error } = await db
+    .from('users')
+    .select('username')
+    .eq('username', username.toLowerCase())
+    .limit(1)
+    .single();
+  return !error && !!data;
+}
+
+export async function getUsernameByEmail(email: string): Promise<string | null> {
+  const { data, error } = await db
+    .from('users')
+    .select('username')
+    .ilike('email', email)
+    .limit(1)
+    .single();
+  if (error || !data) return null;
+  return (data as { username: string }).username;
+}
+
+export async function getUserLinkByUsername(username: string): Promise<BotUserLink | null> {
+  const { data, error } = await db
+    .from('bot_user_links')
+    .select('*')
+    .eq('username', username.toLowerCase())
+    .single();
+  if (error || !data) return null;
+  return data as BotUserLink;
+}
+
+export async function getUserLinkByAadObjectId(aadObjectId: string): Promise<BotUserLink | null> {
+  const { data, error } = await db
+    .from('bot_user_links')
+    .select('*')
+    .eq('aad_object_id', aadObjectId)
+    .single();
+  if (error || !data) return null;
+  return data as BotUserLink;
+}
+
+export async function upsertUserLink(params: {
+  username: string;
+  email: string | null;
+  aadObjectId: string | null;
+  serviceUrl: string;
+  conversationRef: Partial<ConversationReference>;
+  tenantId: string | null;
+}): Promise<BotUserLink | null> {
+  const { data, error } = await db
+    .from('bot_user_links')
+    .upsert({
+      username: params.username.toLowerCase(),
+      email: params.email,
+      aad_object_id: params.aadObjectId,
+      service_url: params.serviceUrl,
+      conversation_ref: params.conversationRef,
+      tenant_id: params.tenantId,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'username' })
+    .select()
+    .single();
+  if (error) {
+    console.error('upsertUserLink error:', error.message);
+    return null;
+  }
+  return data as BotUserLink;
+}
+
+export async function deleteUserLinkByUsername(username: string): Promise<boolean> {
+  const { error } = await db
+    .from('bot_user_links')
+    .delete()
+    .eq('username', username.toLowerCase());
+  return !error;
+}
+
+export async function listUserLinks(): Promise<BotUserLink[]> {
+  const { data, error } = await db
+    .from('bot_user_links')
+    .select('*')
+    .order('created_at', { ascending: false });
+  if (error || !data) return [];
+  return data as BotUserLink[];
 }
 
 function generateRandomCode(): string {
