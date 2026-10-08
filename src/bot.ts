@@ -205,15 +205,23 @@ export class RgmcItBot extends TeamsActivityHandler {
 
         if (!systemTag || !rest) {
           await context.sendActivity(pick([
-            `Kulang ang details! 😅 Format: \`feature <system tag> <request> --- <description>\`\nExample: \`@RGMC IT Bot feature travelandexpense Add dark mode --- Users have been asking for a dark theme option in settings.\``,
-            `Hala, konting detalye pa! 🤔 Format: \`feature <system tag> <request> --- <description>\`\nExample: \`@RGMC IT Bot feature portal Export to Excel --- Add an export button on the reports page.\``,
+            `Kulang ang details! 😅 Format: \`feature <system tag> <request> \\ <description>\`\nExample: \`@RGMC IT Bot feature travelandexpense Add dark mode \\ Users have been asking for a dark theme option in settings.\``,
+            `Hala, konting detalye pa! 🤔 Format: \`feature <system tag> <request> \\ <description>\`\nExample: \`@RGMC IT Bot feature portal Export to Excel \\ Add an export button on the reports page.\``,
           ]));
           return;
         }
 
-        const sepIdx      = rest.indexOf('---');
-        const title       = (sepIdx === -1 ? rest : rest.slice(0, sepIdx)).trim();
-        const description = (sepIdx === -1 ? rest : rest.slice(sepIdx + 3)).trim() || title;
+        const sepIdx = rest.indexOf('\\');
+        if (sepIdx === -1) {
+          await context.sendActivity(pick([
+            `Oops, wala akong nakitang \`\\\` separator. 😅 Kailangan ko hiwalay ang request at description. Format: \`feature <system tag> <request> \\ <description>\``,
+            `Hindi ko mahiwalay ang request sa description — kulang ang \`\\\`. 🤔 Format: \`feature <system tag> <request> \\ <description>\``,
+          ]));
+          return;
+        }
+
+        const title       = rest.slice(0, sepIdx).trim();
+        const description = rest.slice(sepIdx + 1).trim() || title;
 
         await context.sendActivities([{ type: 'typing' }]);
         const result = await submitFeatureRequest(context, systemTag, title, description);
