@@ -37,6 +37,38 @@ function extractArg(args: string[], fillers: Set<string>): string {
   return remaining.join(' ').trim().replace(/\?+$/, '');
 }
 
+// Keywords that introduce a `subscribe` filter value, e.g. `subscribe department IT category Software/Application`.
+const SUBSCRIBE_FILTER_KEYWORDS = ['department', 'category'] as const;
+type SubscribeFilterKeyword = typeof SUBSCRIBE_FILTER_KEYWORDS[number];
+
+// Splits `subscribe` args into the leading event selectors plus any filter
+// keyword values, order-independent — each filter's value runs from right
+// after its keyword up to whichever filter keyword comes next (or the end).
+function parseSubscribeFilters(args: string[], origArgs: string[]): {
+  eventArgs: string[];
+  filters: Record<SubscribeFilterKeyword, string | null>;
+  emptyFilterKeyword: SubscribeFilterKeyword | null;
+} {
+  const keywordIdx = SUBSCRIBE_FILTER_KEYWORDS
+    .map(kw => ({ kw, idx: args.indexOf(kw) }))
+    .filter(({ idx }) => idx !== -1)
+    .sort((a, b) => a.idx - b.idx);
+
+  const eventArgs = keywordIdx.length > 0 ? args.slice(0, keywordIdx[0].idx) : args;
+
+  const filters = { department: null, category: null } as Record<SubscribeFilterKeyword, string | null>;
+  let emptyFilterKeyword: SubscribeFilterKeyword | null = null;
+
+  keywordIdx.forEach(({ kw, idx }, i) => {
+    const endIdx = i + 1 < keywordIdx.length ? keywordIdx[i + 1].idx : args.length;
+    const value = origArgs.slice(idx + 1, endIdx).join(' ').trim() || null;
+    filters[kw] = value;
+    if (!value) emptyFilterKeyword = kw;
+  });
+
+  return { eventArgs, filters, emptyFilterKeyword };
+}
+
 // Split long text into chunks without cutting mid-word, for Teams message limits
 function chunkText(text: string, maxLen = 3800): string[] {
   if (text.length <= maxLen) return [text];
@@ -145,18 +177,17 @@ export class RgmcItBot extends TeamsActivityHandler {
 
         const validEvents = new Set(['created', 'updated', 'resolved', 'all']);
 
-        // Split args at the "department" keyword:
-        // everything before it = event selectors; everything after it = dept name
-        const deptIdx = args.indexOf('department');
-        const eventArgs = deptIdx === -1 ? args : args.slice(0, deptIdx);
-        const departmentFilter = deptIdx !== -1
-          ? origArgs.slice(deptIdx + 1).join(' ').trim() || null
-          : null;
+        // `subscribe [events] [department <DEPT>] [category <CATEGORY>]` — filter
+        // keywords can appear in either order; everything before the first one is
+        // event selectors.
+        const { eventArgs, filters, emptyFilterKeyword } = parseSubscribeFilters(args, origArgs);
+        const departmentFilter = filters.department;
+        const categoryFilter = filters.category;
 
-        if (deptIdx !== -1 && !departmentFilter) {
+        if (emptyFilterKeyword) {
           await context.sendActivity(pick([
-            `Huy, ano ang department? 🤔 Kailangan mo ng department name pagkatapos ng \`department\`.\nExample: \`@RGMC IT Bot subscribe department IT\``,
-            `Kulang! Lagyan mo ng department name. 😅\nExample: \`@RGMC IT Bot subscribe department Finance\``,
+            `Huy, ano ang ${emptyFilterKeyword}? 🤔 Kailangan mo ng ${emptyFilterKeyword === 'department' ? 'department name' : 'request category name'} pagkatapos ng \`${emptyFilterKeyword}\`.\nExample: \`@RGMC IT Bot subscribe ${emptyFilterKeyword} ${emptyFilterKeyword === 'department' ? 'IT' : 'Software/Application'}\``,
+            `Kulang! Lagyan mo ng ${emptyFilterKeyword === 'department' ? 'department name' : 'request category name'}. 😅\nExample: \`@RGMC IT Bot subscribe ${emptyFilterKeyword} ${emptyFilterKeyword === 'department' ? 'Finance' : 'Hardware'}\``,
           ]));
           return;
         }
@@ -165,13 +196,13 @@ export class RgmcItBot extends TeamsActivityHandler {
 
         if (eventArgs.length > 0 && requestedEvents.length === 0) {
           await context.sendActivity(pick([
-            `Hmm, hindi ko kilala ang event na yan. 🤔 Valid options:\n• \`subscribe\` — new issues only\n• \`subscribe all\` — all ticket events\n• \`subscribe created updated resolved\` — mix and match\n• \`subscribe department <DEPT>\` — filter by department`,
-            `Ay, mali ang event name. 😅 Gamitin:\n• \`subscribe\` — new issues only\n• \`subscribe all\` — lahat ng events\n• \`subscribe department IT\` — IT department lang`,
+            `Hmm, hindi ko kilala ang event na yan. 🤔 Valid options:\n• \`subscribe\` — new issues only\n• \`subscribe all\` — all ticket events\n• \`subscribe created updated resolved\` — mix and match\n• \`subscribe department <DEPT>\` — filter by department\n• \`subscribe category <CATEGORY>\` — filter by request category`,
+            `Ay, mali ang event name. 😅 Gamitin:\n• \`subscribe\` — new issues only\n• \`subscribe all\` — lahat ng events\n• \`subscribe department IT\` — IT department lang\n• \`subscribe category Software/Application\` — category lang`,
           ]));
           return;
         }
 
-        const result = await subscribeChannel(context, requestedEvents, departmentFilter);
+        const result = await subscribeChannel(context, requestedEvents, departmentFilter, categoryFilter);
         await context.sendActivity(result.message);
         break;
       }

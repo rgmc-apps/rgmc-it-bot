@@ -1,5 +1,6 @@
 import { TurnContext } from 'botbuilder';
 import { config } from '../config';
+import { resolveEmail } from './userLinkService';
 
 export interface FeatureRequestResult {
   success: boolean;
@@ -19,7 +20,10 @@ export async function submitFeatureRequest(
     return { success: false, message: '❌ Feature request submission is not configured on this bot yet (missing GATEWAY_BASE_URL/WEBHOOK_API_KEY).' };
   }
 
-  const reporterName = context.activity.from?.name?.trim() || 'MS Teams User';
+  const reporterName  = context.activity.from?.name?.trim() || 'MS Teams User';
+  // Looked up from the requester's Teams profile (TeamsInfo.getMember) so the
+  // created ticket's notification email is theirs, not a generic bot address.
+  const reporterEmail = await resolveEmail(context);
 
   let res: Response;
   try {
@@ -34,6 +38,7 @@ export async function submitFeatureRequest(
         title,
         description,
         reporter_name: reporterName,
+        reporter_email: reporterEmail,
       }),
     });
   } catch (err) {

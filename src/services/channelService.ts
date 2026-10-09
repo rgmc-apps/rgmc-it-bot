@@ -76,7 +76,8 @@ const VALID_EVENTS = new Set(['created', 'updated', 'resolved', 'all']);
 export async function subscribeChannel(
   context: TurnContext,
   events: string[],
-  departmentFilter: string | null = null
+  departmentFilter: string | null = null,
+  categoryFilter: string | null = null
 ): Promise<RegisterResult> {
   const activity = context.activity;
   const teamsData = activity.channelData as Record<string, unknown> | undefined;
@@ -114,6 +115,7 @@ export async function subscribeChannel(
     notifyUpdated,
     notifyResolved,
     departmentFilter,
+    categoryFilter,
   });
 
   if (!subscription) {
@@ -125,9 +127,9 @@ export async function subscribeChannel(
   if (notifyUpdated)  eventList.push('✏️ Ticket updated');
   if (notifyResolved) eventList.push('✅ Ticket resolved');
 
-  const deptLine = departmentFilter
-    ? [`• Department: ${departmentFilter}`]
-    : [];
+  const filterLines: string[] = [];
+  if (departmentFilter) filterLines.push(`• Department: ${departmentFilter}`);
+  if (categoryFilter)   filterLines.push(`• Request category: ${categoryFilter}`);
 
   return {
     success: true,
@@ -136,7 +138,7 @@ export async function subscribeChannel(
       ``,
       `**Events you'll receive:**`,
       ...eventList.map(e => `• ${e}`),
-      ...(deptLine.length ? [``, `**Department filter:**`, ...deptLine] : []),
+      ...(filterLines.length ? [``, `**Filters:**`, ...filterLines] : []),
       ``,
       `Use \`@RGMC IT Bot configure\` to fine-tune filters (priority, type).`,
       `Use \`@RGMC IT Bot unregister\` to stop notifications.`,
@@ -228,6 +230,7 @@ export async function getChannelStatus(context: TurnContext): Promise<string> {
   if (sub.priority_filter?.length) filters.push(`• Priority: ${sub.priority_filter.join(', ')}`);
   if (sub.type_filter?.length) filters.push(`• Type: ${sub.type_filter.join(', ')}`);
   if (sub.department_filter) filters.push(`• Department: ${sub.department_filter}`);
+  if (sub.category_filter) filters.push(`• Request category: ${sub.category_filter}`);
 
   return [
     `📬 This channel is **registered** for ticket notifications.`,
@@ -242,7 +245,7 @@ export async function getChannelStatus(context: TurnContext): Promise<string> {
 
 export function matchesFilters(
   subscription: BotSubscription,
-  ticket: { priority?: string | null; ticket_type?: string | null; department?: string | null; assigned_to?: string | null },
+  ticket: { priority?: string | null; ticket_type?: string | null; department?: string | null; assigned_to?: string | null; request_category?: string | null },
   eventType: 'created' | 'updated' | 'resolved'
 ): boolean {
   if (eventType === 'created' && !subscription.notify_created) return false;
@@ -262,6 +265,11 @@ export function matchesFilters(
     const filedByDept = (ticket.department || '').toLowerCase() === dept;
     const assignedToDept = (ticket.assigned_to || '').toLowerCase().includes(dept);
     if (!filedByDept && !assignedToDept) return false;
+  }
+
+  if (subscription.category_filter) {
+    const category = subscription.category_filter.toLowerCase();
+    if ((ticket.request_category || '').toLowerCase() !== category) return false;
   }
 
   return true;

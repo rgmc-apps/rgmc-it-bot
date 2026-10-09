@@ -121,6 +121,16 @@ export function buildHelpCard(): Attachment {
         'good',
       ),
       cmdRow(
+        'subscribe category <CATEGORY>',
+        'Subscribe and only receive tickets filed under a specific request category (e.g. Software/Application).',
+        'good',
+      ),
+      cmdRow(
+        'subscribe department <DEPT> category <CATEGORY>',
+        'Combine department and request category filters — order doesn\'t matter.',
+        'good',
+      ),
+      cmdRow(
         'register <CODE>',
         'Register this channel using an admin-issued code (full setup).',
         'good',

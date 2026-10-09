@@ -90,6 +90,8 @@ The bot uses a **code-based channel registration** model (inspired by GitHub's T
 Per-channel configurable filters:
 - **Priority filter** — e.g. only `high` and `critical`
 - **Type filter** — e.g. only `incident` or `service_request`
+- **Department filter** — `subscribe department <DEPT>`, matches the ticket's department or assignee
+- **Request category filter** — `subscribe category <CATEGORY>`, matches the ticket's `request_category` (e.g. `Software/Application`)
 - **Event toggles** — independently enable/disable created, updated, and resolved notifications
 - `configure all` resets to receive everything
 
@@ -98,7 +100,9 @@ Per-channel configurable filters:
 - `@RGMC IT Bot feature <system tag> <request> \ <description>` creates a feature-request ticket on the gateway against the matching system
 - The system is looked up by its `tags` column (same tag matching used by `gumagana po ba yung <SITE>`)
 - The reporter is set to the Teams display name of whoever typed the command; the description is appended with a note that it came from a Teams chat
-- Other required ticket fields (company, email, viber) are filled with placeholders since there's no helpdesk form behind this — see `rgmc-gateway Integration` below
+- Every ticket created this way is automatically set to **request category `Software/Application`** and **priority `P2`**
+- The notification email is looked up from the caller's own Teams profile (`TeamsInfo.getMember()`) — no manual email entry needed
+- Other required ticket fields (company, viber) are filled with placeholders since there's no helpdesk form behind this — see `rgmc-gateway Integration` below
 
 ### <span style="color:#2a9d8f">💬 Personal Mention & Assignment DMs</span>
 
@@ -124,10 +128,16 @@ All commands are issued by **@mentioning** the bot in a Teams channel or chat.
 
 | Command | Description |
 |---|---|
+| `@RGMC IT Bot subscribe` | Self-service channel subscription — no admin code needed (new issues only) |
+| `@RGMC IT Bot subscribe all` | Subscribe to all ticket events: created, updated, and resolved |
+| `@RGMC IT Bot subscribe created updated resolved` | Subscribe to specific events only — mix and match |
+| `@RGMC IT Bot subscribe department <DEPT>` | Subscribe, filtered to tickets filed by or assigned to a specific department |
+| `@RGMC IT Bot subscribe category <CATEGORY>` | Subscribe, filtered to a specific request category (e.g. `Software/Application`) |
+| `@RGMC IT Bot subscribe department <DEPT> category <CATEGORY>` | Combine department and request category filters — order doesn't matter |
 | `@RGMC IT Bot register <CODE>` | Register this channel to receive ticket notifications using the provided one-time code |
 | `@RGMC IT Bot unregister` | Remove this channel from ticket notifications |
 | `@RGMC IT Bot ticket <TICKET-NUMBER>` | Look up the current status of a ticket (e.g. `ticket IT-00042`) |
-| `@RGMC IT Bot feature <system tag> <request> \ <description>` | Creates a feature-request ticket against a system (looked up by tag) |
+| `@RGMC IT Bot feature <system tag> <request> \ <description>` | Creates a feature-request ticket (category `Software/Application`, priority `P2`) against a system (looked up by tag) |
 | `@RGMC IT Bot configure all` | Reset all filters — receive notifications for every ticket |
 | `@RGMC IT Bot configure priority high critical` | Filter notifications to only high / critical priority tickets |
 | `@RGMC IT Bot configure type incident service_request` | Filter notifications by ticket type |
@@ -613,8 +623,10 @@ def bot_feature_request():
     secret = request.headers.get("X-API-Key", "")
     if not IT_BOT_API_KEY or not hmac.compare_digest(secret, IT_BOT_API_KEY):
         return jsonify({"error": "Unauthorized"}), 401
-    # ...looks up the system by tag, creates an /issues row, notifies subscribed
-    # Teams channels via notify_ticket_created(), and returns the ticket_number.
+    # ...looks up the system by tag, creates an /issues row (request_category
+    # "Software/Application", priority "P2", email = reporter_email), notifies
+    # subscribed Teams channels via notify_ticket_created(), and returns the
+    # ticket_number.
 ```
 
 **Request body (sent by this bot):**
@@ -624,9 +636,12 @@ def bot_feature_request():
   "system_tag": "travelandexpense",
   "title": "Add dark mode",
   "description": "Users have been asking for a dark theme option in settings.",
-  "reporter_name": "Juan Dela Cruz"
+  "reporter_name": "Juan Dela Cruz",
+  "reporter_email": "juan.delacruz@rgmcgroup.com"
 }
 ```
+
+> 📌 `reporter_email` is looked up from the Teams caller's profile via `TeamsInfo.getMember()` (same lookup `link`/`subscribe me` use) — it's the email the created ticket's notifications go to. Every ticket created this way is automatically filed as **request category: `Software/Application`**, **priority: `P2`**.
 
 **Response:**
 
@@ -765,6 +780,8 @@ The bot sends three card variants, all using the Adaptive Card schema v1.4:
 | `registration_code` | `string` | Code used to register |
 | `priority_filter` | `string[] \| null` | `null` = no filter; array = allowlist |
 | `type_filter` | `string[] \| null` | `null` = no filter; array = allowlist |
+| `department_filter` | `string \| null` | `null` = no filter; matches `issues.department` or a substring of `assigned_to` |
+| `category_filter` | `string \| null` | `null` = no filter; matches `issues.request_category` exactly (case-insensitive) |
 | `notify_created` | `boolean` | Send on ticket creation |
 | `notify_updated` | `boolean` | Send on ticket update |
 | `notify_resolved` | `boolean` | Send on ticket resolution |

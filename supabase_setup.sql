@@ -41,6 +41,8 @@ CREATE TABLE IF NOT EXISTS public.bot_subscriptions (
     -- Notification filters (NULL = no filter = receive all)
     priority_filter     TEXT[],    -- e.g. ['high','critical']
     type_filter         TEXT[],    -- e.g. ['incident']
+    department_filter   TEXT,      -- e.g. 'IT' (matches issues.department or a substring of assigned_to)
+    category_filter     TEXT,      -- e.g. 'Software/Application' (matches issues.request_category)
 
     -- Event toggles
     notify_created      BOOLEAN     NOT NULL DEFAULT true,
@@ -55,6 +57,10 @@ CREATE INDEX IF NOT EXISTS idx_bot_subs_channel_id ON public.bot_subscriptions (
 CREATE INDEX IF NOT EXISTS idx_bot_subs_team_id    ON public.bot_subscriptions (team_id);
 
 ALTER TABLE public.bot_subscriptions ENABLE ROW LEVEL SECURITY;
+
+-- Safe to re-run against an existing table created before these columns existed.
+ALTER TABLE public.bot_subscriptions ADD COLUMN IF NOT EXISTS department_filter TEXT;
+ALTER TABLE public.bot_subscriptions ADD COLUMN IF NOT EXISTS category_filter   TEXT;
 
 
 -- ─────────────────────────────────────────────────────────────────────────────

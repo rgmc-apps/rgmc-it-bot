@@ -47,6 +47,7 @@ export interface BotSubscription {
   priority_filter: string[] | null;
   type_filter: string[] | null;
   department_filter: string | null;
+  category_filter: string | null;
   notify_created: boolean;
   notify_updated: boolean;
   notify_resolved: boolean;

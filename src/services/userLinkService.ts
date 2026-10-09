@@ -37,7 +37,7 @@ function isPersonalChat(context: TurnContext): boolean {
   return context.activity.conversation?.conversationType === 'personal';
 }
 
-async function resolveEmail(context: TurnContext): Promise<string | null> {
+export async function resolveEmail(context: TurnContext): Promise<string | null> {
   try {
     const member = await TeamsInfo.getMember(context, context.activity.from.id);
     const email = (member.email || member.userPrincipalName || '').toLowerCase().trim();

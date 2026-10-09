@@ -65,6 +65,7 @@ export async function subscribeChannelDirect(params: {
   notifyUpdated: boolean;
   notifyResolved: boolean;
   departmentFilter: string | null;
+  categoryFilter: string | null;
 }): Promise<BotSubscription | null> {
   const internalCode = `SUB-${generateRandomCode()}`;
   const { data, error } = await db
@@ -81,6 +82,7 @@ export async function subscribeChannelDirect(params: {
       notify_updated: params.notifyUpdated,
       notify_resolved: params.notifyResolved,
       department_filter: params.departmentFilter,
+      category_filter: params.categoryFilter,
       updated_at: new Date().toISOString(),
     }, { onConflict: 'channel_id' })
     .select()
@@ -139,6 +141,7 @@ export async function updateSubscriptionFilters(
     priority_filter?: string[] | null;
     type_filter?: string[] | null;
     department_filter?: string | null;
+    category_filter?: string | null;
     notify_created?: boolean;
     notify_updated?: boolean;
     notify_resolved?: boolean;
