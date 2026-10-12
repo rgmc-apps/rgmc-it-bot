@@ -42,6 +42,21 @@ const PRIORITY_ACTION_TAG: Record<string, string> = {
   high:     '⚡ URGENT',
 };
 
+// ── Ticket type ───────────────────────────────────────────────────────────────
+
+const TICKET_TYPE_LABELS: Record<string, string> = {
+  service_request:  'Service Request',
+  incident_problem: 'Incident / Problem',
+  change_request:   'Change Request',
+  request:          'Request',
+  incident_report:  'Incident Report',
+};
+
+function ticketTypeLabel(ticketType: string): string {
+  return TICKET_TYPE_LABELS[ticketType]
+    ?? ticketType.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
+
 // ── Status ────────────────────────────────────────────────────────────────────
 
 const STATUS_STYLE: Record<string, ContainerStyle> = {
@@ -261,7 +276,7 @@ export function buildTicketCreatedCard(ticket: Ticket): Attachment {
       width: 'stretch',
       items: [
         { type: 'TextBlock', text: 'TYPE', size: 'Small', weight: 'Bolder', color: 'accent', spacing: 'None' },
-        { type: 'TextBlock', text: ticket.ticket_type, size: 'Small', spacing: 'None', wrap: true },
+        { type: 'TextBlock', text: ticketTypeLabel(ticket.ticket_type), size: 'Small', spacing: 'None', wrap: true },
         ...(ticket.request_category
           ? [{ type: 'TextBlock', text: ticket.request_category, size: 'Small', isSubtle: true, spacing: 'None' }]
           : []),

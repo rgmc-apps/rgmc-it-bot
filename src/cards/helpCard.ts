@@ -188,7 +188,7 @@ export function buildHelpCard(): Attachment {
       sectionHeader('🎫', 'TICKETS', 'warning'),
       cmdRow(
         'ticket <NUMBER>',
-        'Look up the status of a ticket (e.g. ticket IT-0042).',
+        'Look up the status of a ticket (e.g. ticket TIM-25021900).',
         'warning',
       ),
 

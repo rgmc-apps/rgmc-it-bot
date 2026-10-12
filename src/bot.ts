@@ -211,9 +211,9 @@ export class RgmcItBot extends TeamsActivityHandler {
         const ticketNumber = args.join(' ').trim().toUpperCase();
         if (!ticketNumber) {
           await context.sendActivity(pick([
-            `Anong ticket number yun? 🎫 Hindi ko mahulaan, pre. Example:\n\`@RGMC IT Bot ticket IT-0042\``,
-            `Ticket... ano? 🤷 Kulang ka ng ticket number. Example:\n\`@RGMC IT Bot ticket IT-0042\``,
-            `Ay nako, wala kang sinabi na ticket number. 😅 Kailangan ko yun!\nExample: \`@RGMC IT Bot ticket IT-0042\``,
+            `Anong ticket number yun? 🎫 Hindi ko mahulaan, pre. Example:\n\`@RGMC IT Bot ticket TIM-25021900\``,
+            `Ticket... ano? 🤷 Kulang ka ng ticket number. Example:\n\`@RGMC IT Bot ticket TIM-25021900\``,
+            `Ay nako, wala kang sinabi na ticket number. 😅 Kailangan ko yun!\nExample: \`@RGMC IT Bot ticket TIM-25021900\``,
           ]));
           return;
         }
@@ -221,7 +221,7 @@ export class RgmcItBot extends TeamsActivityHandler {
         if (!ticket) {
           await context.sendActivity(pick([
             `Hm, hindi ko makita ang \`${ticketNumber}\`. 🔍 Baka mali ang number? O baka hindi pa na-encode?`,
-            `Nasan na yung \`${ticketNumber}\`? 😅 Wala sa database. Double-check mo ang format (e.g. \`IT-0042\`).`,
+            `Nasan na yung \`${ticketNumber}\`? 😅 Wala sa database. Double-check mo ang format (e.g. \`TIM-25021900\`).`,
             `\`${ticketNumber}\`? Hinanap ko na, wala talaga. 🤔 Sigurado kang tama ang ticket number?`,
           ]));
           return;
