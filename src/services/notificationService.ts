@@ -1,11 +1,15 @@
 import { CloudAdapter, MessageFactory, TurnContext } from 'botbuilder';
-import { getAllSubscriptions, getUserLinkByUsername } from './supabase';
+import { getAllSubscriptions, getUserLinkByUsername, getAllPoUploadSubscriptions } from './supabase';
 import { matchesFilters } from './channelService';
 import { buildTicketCreatedCard, buildTicketUpdatedCard } from '../cards/ticketCard';
 import { buildOutageCard } from '../cards/outageCard';
 import { buildMentionCard } from '../cards/mentionCard';
 import { buildAssignmentCard } from '../cards/assignmentCard';
-import { Ticket, TicketChanges, Outage, MentionPayload, AssignmentPayload } from '../types';
+import { buildPoUploadBatchCard, buildPoUploadUnmatchedCard } from '../cards/poUploadCard';
+import {
+  Ticket, TicketChanges, Outage, MentionPayload, AssignmentPayload,
+  PoUploadBatchPayload, PoUploadUnmatchedPayload, PoUploadSubscription,
+} from '../types';
 import { config } from '../config';
 
 async function sendToSubscription(
@@ -71,6 +75,45 @@ export async function notifyAssignment(payload: AssignmentPayload, adapter: Clou
   if (!link) return;
   const card = buildAssignmentCard(payload);
   await sendToSubscription(adapter, link, card);
+}
+
+// ── PO upload notifications (rgmc-worker-pool's POUL SO import pipeline) ───────
+
+function matchesPoFilters(
+  sub: PoUploadSubscription,
+  hasSuccesses: boolean,
+  hasErrors: boolean
+): boolean {
+  if (sub.notify_po_bc && hasSuccesses) return true;
+  if (sub.notify_po_buffer && hasErrors) return true;
+  return false;
+}
+
+export async function notifyPoUploadBatch(payload: PoUploadBatchPayload, adapter: CloudAdapter): Promise<void> {
+  const subscriptions = await getAllPoUploadSubscriptions();
+  const hasSuccesses = payload.successes.length > 0;
+  const hasErrors = payload.errors.length > 0;
+  const card = buildPoUploadBatchCard(payload);
+
+  await Promise.allSettled(
+    subscriptions
+      .filter((s) => matchesPoFilters(s, hasSuccesses, hasErrors))
+      .map((s) => sendToSubscription(adapter, s, card))
+  );
+}
+
+export async function notifyPoUploadUnmatched(payload: PoUploadUnmatchedPayload, adapter: CloudAdapter): Promise<void> {
+  if (payload.flagged.length === 0) return;
+  const subscriptions = await getAllPoUploadSubscriptions();
+  const card = buildPoUploadUnmatchedCard(payload);
+
+  // Unmatched-item orders already reached BC — gate on the same flag as a
+  // successful handoff, not notify_po_buffer (these aren't buffer entries).
+  await Promise.allSettled(
+    subscriptions
+      .filter((s) => s.notify_po_bc)
+      .map((s) => sendToSubscription(adapter, s, card))
+  );
 }
 
 export async function notifyOutageDetected(

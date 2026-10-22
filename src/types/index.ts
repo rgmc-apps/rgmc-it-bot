@@ -55,6 +55,60 @@ export interface BotSubscription {
   updated_at: string;
 }
 
+export interface PoUploadSubscription {
+  id: string;
+  channel_id: string;
+  service_url: string;
+  conversation_ref: Partial<ConversationReference>;
+  tenant_id: string | null;
+  team_id: string | null;
+  channel_name: string | null;
+  notify_po_bc: boolean;
+  notify_po_buffer: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+// ── PO upload (POUL SO import) notifications ───────────────────────────────────
+// Mirrors rgmc-worker-pool's so_import_worker.py _create_order result dict and
+// _send_batch_notification/_send_unmatched_items_notification email content —
+// same data, rendered as a compact Teams card instead of (in addition to) email.
+
+export interface PoUploadOrderResult {
+  po_ref: string;
+  order_no: string;
+  customer_name: string;
+  branch_name: string;
+  resolution_tier: string | null;
+  lines_created: number;
+  lines_skipped: number;
+  from_buffer?: boolean;
+  unmatched_items?: { sku: string | null; description: string | null }[];
+}
+
+export interface PoUploadErrorResult {
+  po_ref: string;
+  error: string;
+  attempt_count?: number;
+}
+
+export interface PoUploadBatchPayload {
+  event: 'po.batch';
+  label: string;            // e.g. "POUL SO Import", "POUL SO Reprocess-Buffer"
+  company: string;
+  src_company: string;
+  successes: PoUploadOrderResult[];
+  errors: PoUploadErrorResult[];
+}
+
+export interface PoUploadUnmatchedPayload {
+  event: 'po.unmatched';
+  label: string;
+  company: string;
+  src_company: string;
+  flagged: PoUploadOrderResult[];   // successes with a non-empty unmatched_items
+}
+
 export interface RegistrationCode {
   code: string;
   label: string | null;

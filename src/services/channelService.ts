@@ -7,6 +7,9 @@ import {
   deleteSubscription,
   markCodeUsed,
   updateSubscriptionFilters,
+  getPoUploadSubscriptionByChannelId,
+  subscribePoUploadChannel,
+  deletePoUploadSubscription,
 } from './supabase';
 import { BotSubscription } from '../types';
 
@@ -240,6 +243,109 @@ export async function getChannelStatus(context: TurnContext): Promise<string> {
     `• On ticket updated: ${sub.notify_updated ? '✅' : '❌'}`,
     `• On ticket resolved: ${sub.notify_resolved ? '✅' : '❌'}`,
     ...(filters.length ? ['**Active filters:**', ...filters] : ['• Filter: none (all tickets)']),
+  ].join('\n');
+}
+
+// ── PO upload notifications (separate group from ticket subscriptions above) ──
+
+export const PO_EVENT_KEYWORDS = new Set(['po-all', 'po-bc', 'po-buffer']);
+
+export async function subscribePoUploads(
+  context: TurnContext,
+  events: string[]
+): Promise<RegisterResult> {
+  const activity = context.activity;
+  const teamsData = activity.channelData as Record<string, unknown> | undefined;
+  const channelId: string =
+    (teamsData?.['teamsChannelId'] as string) ||
+    activity.conversation.id;
+
+  const existing = await getPoUploadSubscriptionByChannelId(channelId);
+  if (existing) {
+    return {
+      success: false,
+      message: `ℹ️ This channel is already subscribed to PO upload notifications.\n\nUse \`@RGMC IT Bot unregister po\` first to change which events it receives.`,
+    };
+  }
+
+  const wantsAll = events.includes('po-all');
+  const notifyPoBc = wantsAll || events.includes('po-bc');
+  const notifyPoBuffer = wantsAll || events.includes('po-buffer');
+
+  const conversationRef = TurnContext.getConversationReference(activity);
+  const teamId      = (teamsData?.['team']   as { id?: string }   | undefined)?.id   || null;
+  const channelName = (teamsData?.['channel'] as { name?: string } | undefined)?.name || null;
+  const tenantId    = (teamsData?.['tenant']  as { id?: string }   | undefined)?.id   || null;
+
+  const subscription = await subscribePoUploadChannel({
+    channelId,
+    serviceUrl: activity.serviceUrl,
+    conversationRef,
+    tenantId,
+    teamId,
+    channelName,
+    notifyPoBc,
+    notifyPoBuffer,
+  });
+
+  if (!subscription) {
+    return { success: false, message: '❌ Failed to subscribe. Please try again.' };
+  }
+
+  const eventList: string[] = [];
+  if (notifyPoBc)     eventList.push('📦 Handoff to BC (at least one order reached Business Central)');
+  if (notifyPoBuffer)  eventList.push('🗂️ Buffered (a PO couldn\'t resolve, needs /reconcile)');
+
+  return {
+    success: true,
+    message: [
+      `✅ This channel is now subscribed to **PO upload** notifications!`,
+      ``,
+      `**Events you'll receive:**`,
+      ...eventList.map(e => `• ${e}`),
+      ``,
+      `Use \`@RGMC IT Bot unregister po\` to stop.`,
+    ].join('\n'),
+  };
+}
+
+export async function unsubscribePoUploads(context: TurnContext): Promise<{ success: boolean; message: string }> {
+  const activity = context.activity;
+  const teamsData = activity.channelData as Record<string, unknown> | undefined;
+  const channelId: string =
+    (teamsData?.['teamsChannelId'] as string) ||
+    activity.conversation.id;
+
+  const existing = await getPoUploadSubscriptionByChannelId(channelId);
+  if (!existing) {
+    return { success: false, message: 'ℹ️ This channel is not subscribed to PO upload notifications.' };
+  }
+
+  const ok = await deletePoUploadSubscription(channelId);
+  if (!ok) {
+    return { success: false, message: '❌ Failed to unsubscribe. Please try again.' };
+  }
+
+  return { success: true, message: '✅ This channel has been unsubscribed from PO upload notifications.' };
+}
+
+export async function getPoUploadStatus(context: TurnContext): Promise<string> {
+  const activity = context.activity;
+  const teamsData = activity.channelData as Record<string, unknown> | undefined;
+  const channelId: string =
+    (teamsData?.['teamsChannelId'] as string) ||
+    activity.conversation.id;
+
+  const sub = await getPoUploadSubscriptionByChannelId(channelId);
+  if (!sub) {
+    return '📭 This channel is **not subscribed** to PO upload notifications.\n\nRun `@RGMC IT Bot subscribe po-all` (or `po-bc` / `po-buffer`) to start.';
+  }
+
+  return [
+    `📬 This channel is **subscribed** to PO upload notifications.`,
+    `• Created: ${new Date(sub.created_at).toLocaleDateString()}`,
+    `• Handoff to BC: ${sub.notify_po_bc ? '✅' : '❌'}`,
+    `• Buffered (needs /reconcile): ${sub.notify_po_buffer ? '✅' : '❌'}`,
   ].join('\n');
 }
 

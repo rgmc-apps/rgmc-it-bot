@@ -6,6 +6,10 @@ import {
   subscribeChannel,
   configureFilters,
   getChannelStatus,
+  subscribePoUploads,
+  unsubscribePoUploads,
+  getPoUploadStatus,
+  PO_EVENT_KEYWORDS,
 } from './services/channelService';
 import {
   linkPersonalChat,
@@ -155,6 +159,11 @@ export class RgmcItBot extends TeamsActivityHandler {
       }
 
       case 'unregister': {
+        if (args[0] === 'po') {
+          const result = await unsubscribePoUploads(context);
+          await context.sendActivity(result.message);
+          break;
+        }
         const result = await unregisterChannel(context);
         await context.sendActivity(result.message);
         break;
@@ -171,6 +180,16 @@ export class RgmcItBot extends TeamsActivityHandler {
             return;
           }
           const result = await linkPersonalChatByUsername(context, targetUsername);
+          await context.sendActivity(result.message);
+          break;
+        }
+
+        // `subscribe po-all|po-bc|po-buffer` — a separate notification group
+        // (PO uploads from rgmc-worker-pool), routed before the ticket-event path
+        // below since it has its own table/flags and no department/category filters.
+        const requestedPoEvents = args.filter(a => PO_EVENT_KEYWORDS.has(a));
+        if (requestedPoEvents.length > 0) {
+          const result = await subscribePoUploads(context, requestedPoEvents);
           await context.sendActivity(result.message);
           break;
         }
@@ -196,8 +215,8 @@ export class RgmcItBot extends TeamsActivityHandler {
 
         if (eventArgs.length > 0 && requestedEvents.length === 0) {
           await context.sendActivity(pick([
-            `Hmm, hindi ko kilala ang event na yan. 🤔 Valid options:\n• \`subscribe\` — new issues only\n• \`subscribe all\` — all ticket events\n• \`subscribe created updated resolved\` — mix and match\n• \`subscribe department <DEPT>\` — filter by department\n• \`subscribe category <CATEGORY>\` — filter by request category`,
-            `Ay, mali ang event name. 😅 Gamitin:\n• \`subscribe\` — new issues only\n• \`subscribe all\` — lahat ng events\n• \`subscribe department IT\` — IT department lang\n• \`subscribe category Software/Application\` — category lang`,
+            `Hmm, hindi ko kilala ang event na yan. 🤔 Valid options:\n• \`subscribe\` — new issues only\n• \`subscribe all\` — all ticket events\n• \`subscribe created updated resolved\` — mix and match\n• \`subscribe department <DEPT>\` — filter by department\n• \`subscribe category <CATEGORY>\` — filter by request category\n• \`subscribe po-all\` / \`po-bc\` / \`po-buffer\` — PO upload notifications (separate group)`,
+            `Ay, mali ang event name. 😅 Gamitin:\n• \`subscribe\` — new issues only\n• \`subscribe all\` — lahat ng events\n• \`subscribe department IT\` — IT department lang\n• \`subscribe category Software/Application\` — category lang\n• \`subscribe po-all\` / \`po-bc\` / \`po-buffer\` — PO upload notifications (separate group)`,
           ]));
           return;
         }
@@ -267,6 +286,11 @@ export class RgmcItBot extends TeamsActivityHandler {
       }
 
       case 'status': {
+        if (args[0] === 'po') {
+          const statusMessage = await getPoUploadStatus(context);
+          await context.sendActivity(statusMessage);
+          break;
+        }
         const statusMessage = await getChannelStatus(context);
         await context.sendActivity(statusMessage);
         break;

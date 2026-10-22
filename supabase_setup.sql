@@ -64,6 +64,38 @@ ALTER TABLE public.bot_subscriptions ADD COLUMN IF NOT EXISTS category_filter   
 
 
 -- ─────────────────────────────────────────────────────────────────────────────
+-- PO upload subscriptions
+-- One row per Teams channel subscribed to rgmc-worker-pool's POUL SO import
+-- notifications (po-all / po-bc / po-buffer) — a separate notification group
+-- from ticket subscriptions above, since a channel may want PO alerts without
+-- wanting IT ticket alerts (or vice versa).
+-- ─────────────────────────────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS public.po_upload_subscriptions (
+    id                  UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+
+    -- Teams identifiers
+    channel_id          TEXT        NOT NULL UNIQUE,
+    service_url         TEXT        NOT NULL,
+    conversation_ref    JSONB       NOT NULL,
+    tenant_id           TEXT,
+    team_id             TEXT,
+    channel_name        TEXT,
+
+    -- Event toggles — po-all sets both true; po-bc/po-buffer set one at a time.
+    notify_po_bc        BOOLEAN     NOT NULL DEFAULT true,   -- at least one order reached BC
+    notify_po_buffer     BOOLEAN     NOT NULL DEFAULT true,   -- at least one PO couldn't resolve, buffered for /reconcile
+
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_po_upload_subs_channel_id ON public.po_upload_subscriptions (channel_id);
+
+ALTER TABLE public.po_upload_subscriptions ENABLE ROW LEVEL SECURITY;
+
+
+-- ─────────────────────────────────────────────────────────────────────────────
 -- Per-user links
 -- One row per RGMC user who has linked a personal (1:1) chat with the bot.
 -- Used to DM a specific user — @mentions and issue/dev item/task assignments —
@@ -114,14 +146,39 @@ ALTER TABLE public.issues ADD COLUMN IF NOT EXISTS anydesk_id      TEXT;
 ALTER TABLE public.issues ADD COLUMN IF NOT EXISTS attachment_urls TEXT[];
 ALTER TABLE public.issues ADD COLUMN IF NOT EXISTS dev_item_id     UUID;
 
--- Auto-generate ticket_number on insert (e.g. IT-00001)
-CREATE SEQUENCE IF NOT EXISTS public.ticket_number_seq START 1;
+-- Auto-generate ticket_number on insert — format "TIM-yymmdd##", where the
+-- 2-digit series resets to 00 at the start of each day (Asia/Manila time).
+-- Kept in sync with rgmc-gateway's own tim_ticket_number_migration.sql —
+-- both repos share the same issues table, so this must match production.
+CREATE TABLE IF NOT EXISTS public.tim_ticket_counters (
+    ticket_date DATE PRIMARY KEY,
+    last_seq    INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE OR REPLACE FUNCTION public.generate_tim_ticket_number()
+RETURNS TEXT LANGUAGE plpgsql AS $$
+DECLARE
+  today DATE := (timezone('Asia/Manila', now()))::date;
+  seq   INTEGER;
+BEGIN
+  INSERT INTO public.tim_ticket_counters (ticket_date, last_seq)
+  VALUES (today, 0)
+  ON CONFLICT (ticket_date) DO NOTHING;
+
+  UPDATE public.tim_ticket_counters
+  SET last_seq = last_seq + 1
+  WHERE ticket_date = today
+  RETURNING last_seq INTO seq;
+
+  RETURN 'TIM-' || to_char(today, 'YYMMDD') || lpad((seq - 1)::text, 2, '0');
+END;
+$$;
 
 CREATE OR REPLACE FUNCTION public.set_ticket_number()
 RETURNS TRIGGER LANGUAGE plpgsql AS $$
 BEGIN
     IF NEW.ticket_number IS NULL THEN
-        NEW.ticket_number := 'IT-' || LPAD(nextval('public.ticket_number_seq')::TEXT, 5, '0');
+        NEW.ticket_number := public.generate_tim_ticket_number();
     END IF;
     RETURN NEW;
 END;

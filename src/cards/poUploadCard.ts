@@ -1,0 +1,182 @@
+import { Attachment, CardFactory } from 'botbuilder';
+import { PoUploadBatchPayload, PoUploadOrderResult, PoUploadUnmatchedPayload } from '../types';
+import { config } from '../config';
+
+type ContainerStyle = 'default' | 'emphasis' | 'good' | 'attention' | 'warning';
+
+const MAX_ROWS = 5;
+
+const TIER_ICON: Record<string, string> = {
+  customer_branch_match: '🎯',
+  branch_override: '📌',
+  customer_override: '📌',
+  automatic_ship_to_match: '🔎',
+};
+
+function tierIcon(tier: string | null): string {
+  return (tier && TIER_ICON[tier]) || '•';
+}
+
+function reconcileAction() {
+  if (!config.reconcilePageUrl) return null;
+  return {
+    type:  'Action.OpenUrl',
+    title: '🗂️  Open /reconcile',
+    style: 'positive',
+    url:   config.reconcilePageUrl,
+  };
+}
+
+function orderRow(r: PoUploadOrderResult): string {
+  const tag = r.from_buffer ? '  _(retried)_' : '';
+  return `${tierIcon(r.resolution_tier)} \`${r.po_ref}\` → **${r.order_no}** — ${r.customer_name}${r.branch_name ? ` / ${r.branch_name}` : ''}${tag}`;
+}
+
+function truncatedList(lines: string[], max = MAX_ROWS): string[] {
+  if (lines.length <= max) return lines;
+  return [...lines.slice(0, max), `_...and ${lines.length - max} more_`];
+}
+
+// ── Batch result (mirrors _send_batch_notification's email) ───────────────────
+
+export function buildPoUploadBatchCard(payload: PoUploadBatchPayload): Attachment {
+  const { label, company, successes, errors } = payload;
+  const hasSuccesses = successes.length > 0;
+  const hasErrors = errors.length > 0;
+
+  const style: ContainerStyle = hasSuccesses && !hasErrors ? 'good' : !hasSuccesses && hasErrors ? 'attention' : 'warning';
+  const totalCreated = successes.reduce((n, r) => n + r.lines_created, 0);
+  const totalSkipped = successes.reduce((n, r) => n + r.lines_skipped, 0);
+
+  const tierCounts: Record<string, number> = {};
+  for (const r of successes) {
+    const key = r.resolution_tier || 'unresolved';
+    tierCounts[key] = (tierCounts[key] || 0) + 1;
+  }
+  const tierSummary = Object.entries(tierCounts)
+    .map(([tier, n]) => `${tierIcon(tier === 'unresolved' ? null : tier)} ${n}`)
+    .join('   ');
+
+  const body: object[] = [
+    {
+      type:  'Container',
+      style,
+      bleed: true,
+      items: [
+        {
+          type:    'TextBlock',
+          text:    '📦  POUL SO IMPORT',
+          size:    'Small',
+          weight:  'Bolder',
+          spacing: 'None',
+        },
+        {
+          type:    'TextBlock',
+          text:    label,
+          size:    'Large',
+          weight:  'Bolder',
+          spacing: 'None',
+          wrap:    true,
+        },
+        {
+          type:     'TextBlock',
+          text:     `${company}  •  ${successes.length} created, ${errors.length} buffered`,
+          size:     'Small',
+          isSubtle: true,
+          spacing:  'None',
+        },
+      ],
+    },
+    {
+      type:    'ColumnSet',
+      spacing: 'Medium',
+      columns: [
+        { type: 'Column', width: 'auto', items: [
+          { type: 'TextBlock', text: 'LINES IN', size: 'Small', weight: 'Bolder', color: 'accent', spacing: 'None' },
+          { type: 'TextBlock', text: `${totalCreated}`, size: 'Medium', weight: 'Bolder', spacing: 'None' },
+        ] },
+        { type: 'Column', width: 'auto', items: [
+          { type: 'TextBlock', text: 'SKIPPED', size: 'Small', weight: 'Bolder', color: 'accent', spacing: 'None' },
+          { type: 'TextBlock', text: `${totalSkipped}`, size: 'Medium', weight: 'Bolder', spacing: 'None' },
+        ] },
+        ...(tierSummary ? [{ type: 'Column', width: 'stretch', verticalContentAlignment: 'Center', items: [
+          { type: 'TextBlock', text: 'RESOLVED VIA', size: 'Small', weight: 'Bolder', color: 'accent', spacing: 'None' },
+          { type: 'TextBlock', text: tierSummary, size: 'Small', spacing: 'None' },
+        ] }] : []),
+      ],
+    },
+  ];
+
+  if (hasSuccesses) {
+    body.push(
+      { type: 'TextBlock', text: '✅ CREATED', size: 'Small', weight: 'Bolder', color: 'good', spacing: 'Medium', separator: true },
+      { type: 'TextBlock', text: truncatedList(successes.map(orderRow)).join('\n\n'), wrap: true, size: 'Small', spacing: 'Small' },
+    );
+  }
+
+  if (hasErrors) {
+    const errorLines = errors.map(e => {
+      const reason = e.error.length > 100 ? e.error.slice(0, 100) + '…' : e.error;
+      return `🗂️ \`${e.po_ref}\` — ${reason}`;
+    });
+    body.push(
+      { type: 'TextBlock', text: '🗂️ BUFFERED (needs /reconcile)', size: 'Small', weight: 'Bolder', color: 'attention', spacing: 'Medium', separator: true },
+      { type: 'TextBlock', text: truncatedList(errorLines).join('\n\n'), wrap: true, size: 'Small', spacing: 'Small' },
+    );
+  }
+
+  const action = hasErrors ? reconcileAction() : null;
+
+  const card = {
+    type:    'AdaptiveCard',
+    version: '1.4',
+    body,
+    actions: action ? [action] : [],
+  };
+
+  return CardFactory.adaptiveCard(card);
+}
+
+// ── Unmatched items (mirrors _send_unmatched_items_notification's email) ──────
+
+export function buildPoUploadUnmatchedCard(payload: PoUploadUnmatchedPayload): Attachment {
+  const { label, company, flagged } = payload;
+  const totalUnmatched = flagged.reduce((n, r) => n + (r.unmatched_items?.length || 0), 0);
+
+  const rows = flagged.map(r => {
+    const items = (r.unmatched_items || []).slice(0, 3)
+      .map(it => it.sku || '(blank SKU)')
+      .join(', ');
+    const more = (r.unmatched_items?.length || 0) > 3 ? `, +${(r.unmatched_items!.length) - 3} more` : '';
+    return `\`${r.po_ref}\` → **${r.order_no}** — ${r.customer_name}\n_Unmatched: ${items}${more}_`;
+  });
+
+  const body: object[] = [
+    {
+      type:  'Container',
+      style: 'warning' as ContainerStyle,
+      bleed: true,
+      items: [
+        { type: 'TextBlock', text: '📦  POUL SO IMPORT', size: 'Small', weight: 'Bolder', spacing: 'None' },
+        { type: 'TextBlock', text: `${label} — unmatched items`, size: 'Large', weight: 'Bolder', spacing: 'None', wrap: true },
+        {
+          type:     'TextBlock',
+          text:     `${company}  •  ${flagged.length} order(s), ${totalUnmatched} unmatched line(s)`,
+          size:     'Small',
+          isSubtle: true,
+          spacing:  'None',
+        },
+      ],
+    },
+    { type: 'TextBlock', text: truncatedList(rows).join('\n\n'), wrap: true, size: 'Small', spacing: 'Medium' },
+  ];
+
+  const card = {
+    type:    'AdaptiveCard',
+    version: '1.4',
+    body,
+    actions: [],
+  };
+
+  return CardFactory.adaptiveCard(card);
+}

@@ -2,145 +2,105 @@
 
 ## Goal
 
-Build and maintain the **RGMC IT Teams Bot** (`C:\claude\rgmc-it-bot`) — a Microsoft Teams bot registered on the RGMC Entra organization that:
+Extend the **RGMC IT Teams Bot** (`C:\claude\rgmc-it-bot`, paired with the Flask gateway at `C:\claude\rgmc-gateway`) with two behavior changes requested this session:
 
-- Notifies subscribed Teams channels when IT tickets are created or updated (pushed from `C:\claude\rgmc-gateway`)
-- Lets users query ticket status, check site health, query GCP/MSSQL databases, and ask AI questions
-- Supports both admin-code-based registration (`register <CODE>`) and self-service channel subscription (`subscribe`)
-- Exposes webhook endpoints (`/api/notify/*`) that `rgmc-gateway` (Python/Flask) calls after ticket create/update events
-- Supports department-scoped subscriptions so channels only receive events relevant to their department
+1. **`subscribe` command** — add a `category <CATEGORY>` filter parameter, parallel to the existing `department <DEPT>` filter, so a channel can subscribe to notifications for a specific `request_category` (e.g. `Software/Application`). Must be combinable with `department` in either order (`subscribe department IT category Software/Application` or the reverse).
+2. **`feature` command** — when a Teams user runs `feature <system tag> <request> \ <description>`, the created ticket must automatically be filed as **request category `Software/Application`**, **priority `P2`**, and the notification **email** must be the *initiating Teams user's own email*, looked up via a Teams "basic info" lookup (`TeamsInfo.getMember()`) rather than a placeholder/admin address.
 
-End state: both projects deployed to Cloud Run, gateway configured with bot URL + API key, all Teams channels able to self-subscribe and receive real-time ticket alerts with visually distinct priority indicators.
+Both of these were implemented and committed. Since then (outside this session's direct edits — see below), the working tree has also picked up an unrelated, already-in-flight change across both repos: the `ticket_number` format migrated from `IT-#####` to `TIM-yymmdd##` (daily-resetting counter), and the `feature` command's created tickets also now get `ticket_type: "change_request"` in addition to the category/priority/email fields from item 2 above.
+
+**End state / acceptance criteria:** subscribe/category filtering works end-to-end in a live Teams channel; feature-request tickets land in the gateway with the right category, priority, email, and (per the newer parallel change) `ticket_type`; documentation (`README.md`) and the Supabase setup script accurately reflect both the filter and ticket-numbering changes; the `category_filter` column actually exists on the production `bot_subscriptions` table.
 
 ---
 
 ## Current State
 
-### Bot (`C:\claude\rgmc-it-bot`) — ✅ Fully committed, clean working tree
+### `rgmc-it-bot` — mostly committed, 2 files with uncommitted changes
 
-`npx tsc --noEmit` passes. Last three commits:
-- `afa7b4f added new command parameters` — `subscribe department <DEPT>` feature
-- `9fbae30 added bot card design` — ticketCard.ts enhanced priority visuals
-- `22194c1 added subscribe command` — self-service subscription feature
+`npx tsc --noEmit` passes clean (verified this session for the subscribe/category + feature/email work; not re-verified after the newer `TIM-` ticket number edits, but those were doc/SQL-only so no TS impact).
 
-**All working bot commands:**
-| Command | Function |
-|---|---|
-| `subscribe` | Self-service subscription (notify_created only) |
-| `subscribe all` | Subscribe to created + updated + resolved |
-| `subscribe created updated resolved` | Mix-and-match event types |
-| `subscribe department <DEPT>` | Subscribe, only receive tickets for a specific department |
-| `subscribe all department <DEPT>` | All events, department-scoped (multi-word dept names supported) |
-| `register <CODE>` | Admin-code-based registration |
-| `unregister` | Remove subscription |
-| `configure all / priority / type` | Filter notifications |
-| `status` | Show current subscription config (now shows dept filter) |
-| `ticket <NUMBER>` | Look up ticket status |
-| `gumagana po ba yung <SITE>` | Ping site |
-| `anong site po yung <SYSTEM>` | Get site URL |
-| `ask <QUESTION>` | GPT-powered AI assistant |
-| `bigquery <table> <col> <val>` | Query BigQuery |
-| `bigquery latest <table> <datecol>` | Latest BigQuery rows |
-| `<db_name> <table> <col> <val>` | Generic MSSQL query |
-| `vibe check` | Bot health check |
+Git state (`git status --short`):
+```
+ M README.md
+ M supabase_setup.sql
+```
+Everything else (`src/bot.ts`, `src/cards/helpCard.ts`, `src/cards/ticketCard.ts`, `src/services/channelService.ts`, `src/services/featureRequestService.ts`, `src/services/supabase.ts`, `src/services/userLinkService.ts`, `src/types/index.ts`) is **already committed** across two commits:
 
-**Webhook endpoints (called by gateway):**
-- `POST /api/notify/ticket-created` — `{ event: "ticket.created", ticket: Ticket }`
-- `POST /api/notify/ticket-updated` — `{ event: "ticket.updated", ticket: Ticket, changes: TicketChanges }`
-- `POST /api/notify` — unified endpoint, dispatches on `payload.event`
-- All require `x-api-key` header matching `WEBHOOK_API_KEY` env var
+- `9c28a1a` "added notif" (2026-10-09) — this session's `subscribe category` filter + `feature` command auto-category/priority/email work.
+- `d19689d` "added bot changes" (2026-10-12) — a **different, already-committed** change (not made by this session's conversation) that updated example ticket numbers from `IT-0042` → `TIM-25021900` in `bot.ts`/`helpCard.ts`, and added a `ticketTypeLabel()` display mapping in `ticketCard.ts` (`change_request` → "Change Request", etc.).
 
-### Gateway (`C:\claude\rgmc-gateway`) — ✅ Fully committed, clean working tree
+The two **uncommitted** files bring documentation/schema in line with that `TIM-` ticket-number change:
+- `README.md` — example ticket numbers updated to `TIM-25021900` format throughout; the feature-command doc line now says "Creates a change-request ticket (type `change_request`, category `Software/Application`, priority `P2`)"; the `ticket_number` field description in the Data Model section now documents the `TIM-yymmdd##` format.
+- `supabase_setup.sql` — the old `ticket_number_seq` sequence + `set_ticket_number()` trigger function were replaced with a `tim_ticket_counters` table + `generate_tim_ticket_number()` function that mirrors `rgmc-gateway`'s own `supabase-migrations/tim_ticket_number_migration.sql` (confirmed byte-for-byte equivalent logic, just different trigger-function names — see Context & Gotchas).
 
-- `e4ecc7b added bot services` (Jun 24) — committed `services/it_bot.py`, `config.py` bot vars, `controllers/issues.py` trigger points, `.env.example` docs
-- Most recent commit: `ea30334 added more metrics for analytics`
+### `rgmc-gateway` — fully committed, clean working tree
+
+`git status --short` is empty. Latest commits: `419965d added epic list`, `fd575b0 added files.`, `4c023fa added the issues modifications`, etc. — none of these are from this session; they're parallel work already landed.
+
+Confirmed in `controllers/webhooks.py` (`bot_feature_request`, ~line 91): the handler now sets `reporter_email` (from the bot's new payload field, falling back to `it-bot@rgmcgroup.com`), and the `issue_row` includes `"ticket_type": "change_request"`, `"request_category": "Software/Application"`, `"priority": "P2"`, `"email": reporter_email` — i.e. this session's category/priority/email work is intact and was further extended (by other work) with the `ticket_type` field.
+
+The `tim_ticket_number_migration.sql` file exists at `rgmc-gateway/supabase-migrations/` but **whether it has actually been run against the production Supabase project is unverified** — no DB access from this session.
 
 ---
 
 ## Files Actively Being Edited
 
-No files are mid-edit. Everything was committed this session (`afa7b4f`).
+No file is mid-edit / in a broken state. The two modified-but-uncommitted files are complete, coherent changes, just not yet committed:
 
-### Changes committed this session (`afa7b4f added new command parameters`)
+- `C:\claude\rgmc-it-bot\README.md` — doc updates for `TIM-` ticket number format + `change_request` ticket type on feature requests (see diff above). Safe to commit as-is.
+- `C:\claude\rgmc-it-bot\supabase_setup.sql` — replaces the old numeric ticket-number sequence/trigger with the `TIM-yymmdd##` counter table + function, to match the gateway's migration. Safe to commit as-is.
 
-- `src/types/index.ts` — Added `department_filter: string | null` to `BotSubscription` interface
-- `src/services/supabase.ts` — Added `departmentFilter: string | null` param to `subscribeChannelDirect()` (stored as `department_filter` column in upsert); added `department_filter?: string | null` to `updateSubscriptionFilters()` filter type
-- `src/services/channelService.ts` — `subscribeChannel()` now accepts `departmentFilter: string | null = null` and passes it through to `subscribeChannelDirect()`; success message includes dept info if set; `getChannelStatus()` shows `department_filter` in active filters list; `matchesFilters()` expanded ticket param type to include `department` and `assigned_to`, added department check (exact match on `ticket.department` OR substring match on `ticket.assigned_to`)
-- `src/bot.ts` — `subscribe` case now parses `department <NAME>` keyword from args (multi-word dept names supported, e.g. `subscribe all department Human Resources`); validates that a name follows the keyword; passes `departmentFilter` to `subscribeChannel()`
-- `src/cards/helpCard.ts` — Added two new command rows in CHANNEL section: `subscribe department <DEPT>` and `subscribe all department <DEPT>`
+Everything else relevant to this session's actual task (category filter, feature email/category/priority) is already committed in `9c28a1a`.
 
 ---
 
 ## Failed Attempts
 
-No failed attempts this session. All changes compiled clean on first pass (`npx tsc --noEmit` — no output = success).
+None. All planned changes compiled/parsed clean on the first pass:
+- `npx tsc --noEmit` — no errors after adding `category_filter` to `BotSubscription`, `subscribeChannelDirect`, `updateSubscriptionFilters`, `subscribeChannel`, `matchesFilters`, and the new `parseSubscribeFilters()` helper in `bot.ts`.
+- A standalone `tsx` smoke test of `parseSubscribeFilters()` (order-independent `department`/`category` keyword parsing) confirmed correct behavior for combined filters, single filters, and the empty-value error case — no bugs found (an initial test harness mistake, forgetting to prepend the `subscribe` command word before splitting args, briefly looked like a bug but was a test-script error, not a code error).
+- Python syntax of `controllers/webhooks.py` was not verified with a compiler (no `python` on PATH in this environment — `python -m py_compile` failed with "Python was not found"); the edit was reviewed by eye only. Worth running `python -m py_compile controllers/webhooks.py` in an environment that has Python before deploying.
 
 ---
 
 ## Next Step
 
-**Add the `department_filter` column to the Supabase `bot_subscriptions` table.** The bot code is already written to read/write this column but it doesn't exist in the DB yet, so `subscribe department <DEPT>` will fail silently (Supabase upsert will ignore unknown columns depending on configuration, or error).
+**Commit the two pending `rgmc-it-bot` files**, then verify the production DB:
 
-Run this SQL in the Supabase dashboard (project: `eesrzpgmsrbhjeenfojq`):
-
-```sql
-ALTER TABLE bot_subscriptions ADD COLUMN department_filter text DEFAULT NULL;
-```
-
-After that, do an end-to-end test:
-1. In a Teams channel, run: `@RGMC IT Bot subscribe department IT`
-2. Verify the bot confirms with the department filter in the success message
-3. Run `@RGMC IT Bot status` — confirm `• Department: IT` shows under Active filters
-4. Submit a test ticket from an IT department user via the helpdesk form
-5. Confirm the channel receives the notification; submit one from a different department and confirm it is NOT delivered
+1. `cd C:\claude\rgmc-it-bot && git add README.md supabase_setup.sql && git commit -m "<message>"` (ask the user for the message/confirmation first — commits should only happen when explicitly requested, per standing policy).
+2. Verify against the actual Supabase project (`eesrzpgmsrbhjeenfojq`) whether:
+   - `bot_subscriptions.category_filter` column exists (added via this session's `ALTER TABLE ... ADD COLUMN IF NOT EXISTS category_filter TEXT;` in `supabase_setup.sql`, but that script may not have been re-run in production since this session only edited the file, not executed it against the DB).
+   - `tim_ticket_counters` table / `generate_tim_ticket_number()` function / trigger exist and are active (from the parallel `TIM-` ticket-number work).
+   If either is missing, run the relevant SQL in Supabase Dashboard → SQL Editor.
+3. **End-to-end test in a live Teams channel** (none of this session's bot-side logic has been tested against a real Teams/Bot Framework session, only `tsc` + an isolated parser smoke test):
+   - `@RGMC IT Bot subscribe category Software/Application` → confirm success message shows the category filter.
+   - `@RGMC IT Bot subscribe department IT category Software/Application` and the reverse order → confirm both parse correctly.
+   - `@RGMC IT Bot status` → confirm "Request category: ..." line appears.
+   - Submit a ticket with `request_category = "Software/Application"` from the helpdesk form and confirm the subscribed channel receives it; submit one with a different category and confirm it is filtered out.
+   - `@RGMC IT Bot feature <tag> <request> \ <description>` → confirm the created ticket (check via `@RGMC IT Bot ticket <NUMBER>` or the gateway admin UI) has `request_category = Software/Application`, `priority = P2`, `ticket_type = change_request`, and `email` equal to the real Teams caller's email (not `it-bot@rgmcgroup.com`) — this requires the tester's Teams account to resolve via `TeamsInfo.getMember()`, which needs the bot to have the right Graph permissions in the Entra app registration.
 
 ---
 
 ## Context & Gotchas
 
-**Department filter matching logic (`channelService.ts:260–265`):**
-- Exact case-insensitive match on `ticket.department` (the filer's department column from the `issues` table)
-- OR substring match on `ticket.assigned_to` (covers cases like "IT Support Team" assigned_to values)
-- The `Ticket.department` field is the requester's department, not an "assigned department" — there is no `assigned_department` column in the issues table. If the gateway adds one later, `matchesFilters` should be updated to check it.
+**Where this session's actual work lives:**
+- `src/bot.ts` — `parseSubscribeFilters()` (new helper, right after `extractArg`) parses `department`/`category` keywords out of `subscribe` args, order-independent, multi-word values supported, stops at the next filter keyword or end of args.
+- `src/services/channelService.ts` — `subscribeChannel()` takes a 4th param `categoryFilter`; `matchesFilters()` checks `subscription.category_filter` against `ticket.request_category` (case-insensitive exact match, unlike `department_filter` which also does a substring match against `assigned_to`).
+- `src/services/userLinkService.ts` — `resolveEmail()` was changed from private to **exported** so `featureRequestService.ts` could reuse the same `TeamsInfo.getMember()` lookup used by `link`/`subscribe me`.
+- `src/services/featureRequestService.ts` — now calls `resolveEmail(context)` and sends it as `reporter_email` in the POST body to the gateway.
+- `rgmc-gateway/controllers/webhooks.py` → `bot_feature_request()` — reads `reporter_email` from the payload (falls back to `it-bot@rgmcgroup.com` if Teams lookup failed), and hardcodes `request_category: "Software/Application"` + `priority: "P2"` on every feature-request-created issue (a later, separate change added `ticket_type: "change_request"` alongside these).
 
-**Subscribe arg parsing order (`bot.ts:117–148`):**
-- `department` keyword must appear AFTER any event selectors: `subscribe created department IT` ✅
-- Everything after `department` is taken as the dept name via `origArgs.slice(deptIdx + 1).join(' ')` — supports multi-word names
-- If `department` keyword is present but no name follows, the bot replies with an error
+**Pre-existing drift fixed this session:** `supabase_setup.sql`'s `CREATE TABLE bot_subscriptions` never actually had `department_filter` in it even though the bot code has read/written that column since an earlier session (per the old `handoff.md` this file replaces) — it was only ever added to production via a manual `ALTER TABLE` run directly in the Supabase dashboard, never reflected in the setup script. This session added both `department_filter` and `category_filter` to the `CREATE TABLE` block *and* added idempotent `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` statements right after, so re-running the script against the existing production table is safe and will backfill `category_filter` if it's missing.
 
-**`subscribe` vs `register` distinction:**
-- `register <CODE>` requires a pre-generated one-time code from `/api/admin/codes`. Validated against `bot_registration_codes` table and marked used. Does NOT support `department_filter` — if needed, the user must `configure` after registration.
-- `subscribe` generates its own internal code (`SUB-XXXXXXXX`) and inserts directly into `bot_subscriptions` with `department_filter`. No admin involvement.
-- Both end up as rows in `bot_subscriptions` and receive notifications identically.
+**`subscribe` vs `configure` filter support is asymmetric:** `category_filter` (like `department_filter`) is only settable via `subscribe category <CATEGORY>` at initial subscribe time — there is no `configure category <CATEGORY>` to change it afterward (same limitation already existed for `department_filter`). If a channel wants to change its category filter, they currently need to `unregister` and re-`subscribe`.
 
-**`subscribe` default behavior — notify_created only:**
-- Bare `subscribe` → `notify_created: true`, `notify_updated: false`, `notify_resolved: false`
-- `subscribe all` enables all three; `subscribe updated resolved` can mix-and-match.
-- `subscribe department IT` → notify_created only + dept filter (wantsAll logic at `channelService.ts:96`)
+**`category_filter` matching is exact, case-insensitive only** — e.g. `subscribe category software` would never match tickets with `request_category = "Software/Application"` unless the stored value is exactly `"Software/Application"` (case-insensitive). This mirrors how `request_category` values are free-text strings managed via the gateway's admin-configurable `request_category` table (see `rgmc-gateway/controllers/admin.py`), so category names must match exactly what's configured there (e.g. `Software/Application`, not `Software` or `Hardware/Application`).
 
-**Gateway bot notification is fire-and-forget:**
-- `requests.post()` with `timeout=5` — if bot is down or slow, gateway continues normally
-- Exceptions are `logger.warning()` only, never re-raised
-- If `IT_BOT_URL` or `IT_BOT_API_KEY` is unset, `_ready()` returns `False` and the function exits silently (safe for local dev)
+**Multi-session / shared working directory:** this working directory appears to have had edits land from outside this conversation's visible turns (commit `d19689d`, the `TIM-` ticket number migration, the `change_request` ticket type addition) — likely a parallel Claude Code session or direct user edits in the same repos. Future sessions resuming from this handoff should **not** assume everything on disk came from a traceable conversation turn; always check `git log`/`git diff` against what's described here before trusting memory/conversation history over the actual working tree.
 
-**`build_changes()` converts all values to strings:**
-- Bot's `TicketChanges` type expects `{ from: string | null, to: string | null }`
-- `build_changes` uses `str(val) if val is not None else None` — handles int fields like `request_to_department_id`
+**Environment note:** this sandbox has no `python` on PATH (`python -m py_compile` fails with "Python was not found; run without arguments to install from the Microsoft Store..."), so Python changes in `rgmc-gateway` can only be reviewed by eye here, not compiled/linted locally.
 
-**Patch context for `notify_ticket_updated`:**
-- Gateway calls `notify_ticket_updated({**issue, **patch}, changes)` where `issue` is the pre-patch row and `patch` is changed fields
-- Constructs a "post-patch" ticket without a second DB fetch
-
-**Bot webhook security:**
-- Checks `req.headers['x-api-key']` against `config.webhookApiKey` (`WEBHOOK_API_KEY` env var) in `src/routes/webhook.ts:10–17`
-- Returns 401 if missing or wrong
-
-**Adaptive Card color limits:**
-- Adaptive Cards in Teams do not support hex colors — only named values: `default`, `dark`, `light`, `accent`, `good`, `warning`, `attention`
-- Container `style` values: `default`, `emphasis`, `good`, `attention`, `warning`
-- These map to the user's Teams theme colors, so exact shade varies per theme
-
-**Bot env vars required for full functionality:**
+**Bot env vars required for full functionality** (unchanged from before, still accurate):
 ```
 BOT_ID               — Azure App Registration Client ID
 BOT_PASSWORD         — Azure App Registration Client Secret
@@ -154,26 +114,4 @@ GPT_API_KEY          — OpenAI key for `ask` command
 GCP_API_URL          — Base URL of rgmc-gcp-api for DB query commands
 ```
 
-**Supabase `bot_subscriptions` table shape (after the required ALTER TABLE):**
-```
-id                 uuid PK
-channel_id         text UNIQUE
-service_url        text
-conversation_ref   jsonb
-tenant_id          text
-team_id            text
-channel_name       text
-registration_code  text  (admin: 'ABCD1234', self-subscribe: 'SUB-XXXXXXXX')
-priority_filter    text[]
-type_filter        text[]
-department_filter  text   ← NEW — must be added via ALTER TABLE
-notify_created     bool
-notify_updated     bool
-notify_resolved    bool
-created_at         timestamptz
-updated_at         timestamptz
-```
-
-**Teams Adaptive Card size limit:** ~28KB. `MAX_TOTAL_ROWS = 15` in `src/cards/queryResultCard.ts`. Reduce if size errors occur with large result sets.
-
-**Node version:** Node 22 — native `fetch` used in `gcpService.ts`. A `node-fetch` shim in `app.ts` patches the botframework's internal `node-fetch` v2 calls to use native fetch (avoids Gunzip errors on Node 22).
+**`TeamsInfo.getMember()` requires the bot to be able to resolve the Teams Graph identity** — this depends on the Entra app registration having the right Microsoft Teams/Graph permissions consented in the org. If `resolveEmail()` silently returns `null` (e.g. permission issue, guest account, or Teams API hiccup), `featureRequestService.ts` passes `reporter_email: null`, and the gateway falls back to `it-bot@rgmcgroup.com` — worth watching for in testing if tickets keep showing the generic email instead of the real submitter's.

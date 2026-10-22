@@ -161,6 +161,34 @@ export function buildHelpCard(): Attachment {
         'good',
       ),
 
+      // ── 📦 PO uploads ─────────────────────────────────────────────────────────
+      sectionHeader('📦', 'PO UPLOADS', 'good'),
+      cmdRow(
+        'subscribe po-all',
+        'Subscribe this channel to all PO upload notifications (handoff to BC + buffered).',
+        'good',
+      ),
+      cmdRow(
+        'subscribe po-bc',
+        'Only notify when at least one order reached Business Central.',
+        'good',
+      ),
+      cmdRow(
+        'subscribe po-buffer',
+        'Only notify when a PO couldn\'t resolve and was buffered for /reconcile.',
+        'good',
+      ),
+      cmdRow(
+        'unregister po',
+        'Stop receiving PO upload notifications in this channel.',
+        'attention',
+      ),
+      cmdRow(
+        'status po',
+        'Show this channel\'s current PO upload notification settings.',
+        'good',
+      ),
+
       // ── 🔔 Personal notifications ────────────────────────────────────────────
       sectionHeader('🔔', 'PERSONAL NOTIFICATIONS (DM ME)', 'good'),
       cmdRow(

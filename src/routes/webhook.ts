@@ -6,8 +6,13 @@ import {
   notifyOutageDetected,
   notifyMention,
   notifyAssignment,
+  notifyPoUploadBatch,
+  notifyPoUploadUnmatched,
 } from '../services/notificationService';
-import { NotifyTicketPayload, NotifyOutagePayload, MentionPayload, AssignmentPayload } from '../types';
+import {
+  NotifyTicketPayload, NotifyOutagePayload, MentionPayload, AssignmentPayload,
+  PoUploadBatchPayload, PoUploadUnmatchedPayload,
+} from '../types';
 import { config } from '../config';
 
 export function createWebhookRouter(adapter: CloudAdapter): Router {
@@ -128,6 +133,51 @@ export function createWebhookRouter(adapter: CloudAdapter): Router {
   });
 
   /**
+   * POST /api/notify/po-upload-batch
+   * Called by rgmc-worker-pool's so_import_worker.py (_send_batch_notification)
+   * after every POUL SO import/reprocess-buffer/backfill batch — same data as the
+   * email, routed to channels subscribed via `subscribe po-all|po-bc|po-buffer`.
+   *
+   * Body: PoUploadBatchPayload
+   */
+  router.post('/po-upload-batch', async (req: Request, res: Response) => {
+    const payload = req.body as PoUploadBatchPayload;
+    if (!payload?.successes || !payload?.errors) {
+      res.status(400).json({ error: 'Missing successes/errors in payload' });
+      return;
+    }
+    try {
+      await notifyPoUploadBatch(payload, adapter);
+      res.json({ success: true, message: 'Notification dispatched' });
+    } catch (err) {
+      console.error('po-upload-batch notify error:', err);
+      res.status(500).json({ error: 'Failed to dispatch notification' });
+    }
+  });
+
+  /**
+   * POST /api/notify/po-upload-unmatched
+   * Called by rgmc-worker-pool's so_import_worker.py (_send_unmatched_items_notification)
+   * for orders inserted into BC that left some lines out due to an unmatched SKU.
+   *
+   * Body: PoUploadUnmatchedPayload
+   */
+  router.post('/po-upload-unmatched', async (req: Request, res: Response) => {
+    const payload = req.body as PoUploadUnmatchedPayload;
+    if (!payload?.flagged) {
+      res.status(400).json({ error: 'Missing flagged in payload' });
+      return;
+    }
+    try {
+      await notifyPoUploadUnmatched(payload, adapter);
+      res.json({ success: true, message: 'Notification dispatched' });
+    } catch (err) {
+      console.error('po-upload-unmatched notify error:', err);
+      res.status(500).json({ error: 'Failed to dispatch notification' });
+    }
+  });
+
+  /**
    * POST /api/notify
    * Unified endpoint — dispatches based on payload.event field.
    *
@@ -156,6 +206,14 @@ export function createWebhookRouter(adapter: CloudAdapter): Router {
         const p = payload as unknown as AssignmentPayload;
         if (!p.assigned_username) { res.status(400).json({ error: 'Missing assigned_username in payload' }); return; }
         await notifyAssignment(p, adapter);
+      } else if (payload.event === 'po.batch') {
+        const p = payload as unknown as PoUploadBatchPayload;
+        if (!p.successes || !p.errors) { res.status(400).json({ error: 'Missing successes/errors in payload' }); return; }
+        await notifyPoUploadBatch(p, adapter);
+      } else if (payload.event === 'po.unmatched') {
+        const p = payload as unknown as PoUploadUnmatchedPayload;
+        if (!p.flagged) { res.status(400).json({ error: 'Missing flagged in payload' }); return; }
+        await notifyPoUploadUnmatched(p, adapter);
       } else {
         res.status(400).json({ error: `Unknown event: ${payload.event}` });
         return;

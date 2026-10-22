@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { ConversationReference } from 'botbuilder';
 import { config } from '../config';
-import { BotSubscription, BotUserLink, RegistrationCode, System, Ticket } from '../types';
+import { BotSubscription, BotUserLink, PoUploadSubscription, RegistrationCode, System, Ticket } from '../types';
 
 export const db = createClient(config.supabaseUrl, config.supabaseKey);
 
@@ -150,6 +150,66 @@ export async function updateSubscriptionFilters(
   const { error } = await db
     .from('bot_subscriptions')
     .update({ ...filters, updated_at: new Date().toISOString() })
+    .eq('channel_id', channelId);
+  return !error;
+}
+
+// ─── PO upload subscriptions ───────────────────────────────────────────────────
+
+export async function getPoUploadSubscriptionByChannelId(channelId: string): Promise<PoUploadSubscription | null> {
+  const { data, error } = await db
+    .from('po_upload_subscriptions')
+    .select('*')
+    .eq('channel_id', channelId)
+    .single();
+  if (error || !data) return null;
+  return data as PoUploadSubscription;
+}
+
+export async function getAllPoUploadSubscriptions(): Promise<PoUploadSubscription[]> {
+  const { data, error } = await db
+    .from('po_upload_subscriptions')
+    .select('*');
+  if (error || !data) return [];
+  return data as PoUploadSubscription[];
+}
+
+export async function subscribePoUploadChannel(params: {
+  channelId: string;
+  serviceUrl: string;
+  conversationRef: Partial<ConversationReference>;
+  tenantId: string | null;
+  teamId: string | null;
+  channelName: string | null;
+  notifyPoBc: boolean;
+  notifyPoBuffer: boolean;
+}): Promise<PoUploadSubscription | null> {
+  const { data, error } = await db
+    .from('po_upload_subscriptions')
+    .upsert({
+      channel_id: params.channelId,
+      service_url: params.serviceUrl,
+      conversation_ref: params.conversationRef,
+      tenant_id: params.tenantId,
+      team_id: params.teamId,
+      channel_name: params.channelName,
+      notify_po_bc: params.notifyPoBc,
+      notify_po_buffer: params.notifyPoBuffer,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'channel_id' })
+    .select()
+    .single();
+  if (error) {
+    console.error('subscribePoUploadChannel error:', error.message);
+    return null;
+  }
+  return data as PoUploadSubscription;
+}
+
+export async function deletePoUploadSubscription(channelId: string): Promise<boolean> {
+  const { error } = await db
+    .from('po_upload_subscriptions')
+    .delete()
     .eq('channel_id', channelId);
   return !error;
 }

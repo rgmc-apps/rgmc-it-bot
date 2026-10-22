@@ -28,4 +28,8 @@ export const config = {
   gptLimit: parseInt(process.env.GPT_LIMIT || '4096', 10),
 
   gcpApiUrl: process.env.GCP_API_URL || '',
+
+  // sbic-manual-trigger-page's /reconcile tab — linked from the "buffered" PO
+  // upload card's action button. Left blank, the button is just omitted.
+  reconcilePageUrl: process.env.RECONCILE_PAGE_URL || '',
 };

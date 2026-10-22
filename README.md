@@ -82,7 +82,7 @@ The bot uses a **code-based channel registration** model (inspired by GitHub's T
 
 ### <span style="color:#2a9d8f">🔎 Ticket Status Lookup</span>
 
-- Any user can ask the bot: `@RGMC IT Bot ticket IT-00042`
+- Any user can ask the bot: `@RGMC IT Bot ticket TIM-25021900`
 - Bot queries Supabase and responds with a rich Adaptive Card showing status, assignee, priority, and resolution notes
 
 ### <span style="color:#2a9d8f">⚙️ Notification Filtering</span>
@@ -136,8 +136,8 @@ All commands are issued by **@mentioning** the bot in a Teams channel or chat.
 | `@RGMC IT Bot subscribe department <DEPT> category <CATEGORY>` | Combine department and request category filters — order doesn't matter |
 | `@RGMC IT Bot register <CODE>` | Register this channel to receive ticket notifications using the provided one-time code |
 | `@RGMC IT Bot unregister` | Remove this channel from ticket notifications |
-| `@RGMC IT Bot ticket <TICKET-NUMBER>` | Look up the current status of a ticket (e.g. `ticket IT-00042`) |
-| `@RGMC IT Bot feature <system tag> <request> \ <description>` | Creates a feature-request ticket (category `Software/Application`, priority `P2`) against a system (looked up by tag) |
+| `@RGMC IT Bot ticket <TICKET-NUMBER>` | Look up the current status of a ticket (e.g. `ticket TIM-25021900`) |
+| `@RGMC IT Bot feature <system tag> <request> \ <description>` | Creates a change-request ticket (type `change_request`, category `Software/Application`, priority `P2`) against a system (looked up by tag) |
 | `@RGMC IT Bot configure all` | Reset all filters — receive notifications for every ticket |
 | `@RGMC IT Bot configure priority high critical` | Filter notifications to only high / critical priority tickets |
 | `@RGMC IT Bot configure type incident service_request` | Filter notifications by ticket type |
@@ -438,7 +438,7 @@ All webhook endpoints require `X-API-Key: <WEBHOOK_API_KEY>` header.
   "event": "ticket.created",
   "ticket": {
     "id": "uuid",
-    "ticket_number": "IT-00042",
+    "ticket_number": "TIM-25021900",
     "title": "Cannot log in to travel portal",
     "description": "Getting 401 error when trying to log in...",
     "status": "pending",
@@ -486,7 +486,7 @@ All webhook endpoints require `X-API-Key: <WEBHOOK_API_KEY>` header.
   "by_display_name": "Juan Dela Cruz",
   "entity_type": "issue",
   "entity_id": "uuid",
-  "entity_label": "IT-00042",
+  "entity_label": "TIM-25021900",
   "comment_excerpt": "@erwin.arellano can you take a look at this?",
   "url": "https://your-gateway.run.app/admin/issues/uuid"
 }
@@ -641,12 +641,12 @@ def bot_feature_request():
 }
 ```
 
-> 📌 `reporter_email` is looked up from the Teams caller's profile via `TeamsInfo.getMember()` (same lookup `link`/`subscribe me` use) — it's the email the created ticket's notifications go to. Every ticket created this way is automatically filed as **request category: `Software/Application`**, **priority: `P2`**.
+> 📌 `reporter_email` is looked up from the Teams caller's profile via `TeamsInfo.getMember()` (same lookup `link`/`subscribe me` use) — it's the email the created ticket's notifications go to. Every ticket created this way is automatically filed as **type: `change_request`**, **request category: `Software/Application`**, **priority: `P2`**.
 
 **Response:**
 
 ```json
-{ "success": true, "ticket_number": "IT-00099", "issue_id": "uuid" }
+{ "success": true, "ticket_number": "TIM-25021901", "issue_id": "uuid" }
 ```
 
 Since there's no helpdesk form behind a chat command, the created issue fills `company_name`, `email`, and `viber_number` with placeholder values — only `site_name` (resolved from the system's tag), `employee_name` (the Teams sender's display name), and the description are real.
@@ -746,7 +746,7 @@ The bot sends three card variants, all using the Adaptive Card schema v1.4:
 | Field | Type | Description |
 |---|---|---|
 | `id` | `string` (UUID) | Primary key |
-| `ticket_number` | `string \| null` | Auto-generated (e.g. `IT-00042`) |
+| `ticket_number` | `string \| null` | Auto-generated, format `TIM-yymmdd##` (series resets daily, e.g. `TIM-25021900`) |
 | `title` | `string \| null` | Short title |
 | `description` | `string` | Full problem description |
 | `status` | `string` | `pending` / `in_progress` / `resolved` / `closed` |
