@@ -57,6 +57,13 @@ export function buildPoUploadBatchCard(payload: PoUploadBatchPayload): Attachmen
     .map(([tier, n]) => `${tierIcon(tier === 'unresolved' ? null : tier)} ${n}`)
     .join('   ');
 
+  // IMS (MSSQL) status, reported separately from the Business Central section below —
+  // undefined/null mssql_inserted (e.g. a buffered retry with no MSSQL-insert data
+  // recorded) is "unknown," excluded from both buckets rather than miscounted.
+  const allResults: { po_ref: string; mssql_inserted?: boolean | null }[] = [...successes, ...errors];
+  const imsInserted = allResults.filter(r => r.mssql_inserted === true);
+  const imsNotInserted = allResults.filter(r => r.mssql_inserted === false);
+
   const body: object[] = [
     {
       type:  'Container',
@@ -107,9 +114,27 @@ export function buildPoUploadBatchCard(payload: PoUploadBatchPayload): Attachmen
     },
   ];
 
+  if (imsInserted.length || imsNotInserted.length) {
+    body.push(
+      { type: 'TextBlock', text: '💾 IMS (MSSQL)', size: 'Small', weight: 'Bolder', color: 'accent', spacing: 'Medium', separator: true },
+      {
+        type: 'TextBlock',
+        text: `✅ Inserted: ${imsInserted.length}    ⚠️ Not inserted: ${imsNotInserted.length}`,
+        size: 'Small', spacing: 'Small',
+      },
+    );
+    if (imsNotInserted.length) {
+      body.push({
+        type: 'TextBlock',
+        text: truncatedList(imsNotInserted.map(r => `⚠️ \`${r.po_ref}\``)).join('\n\n'),
+        wrap: true, size: 'Small', spacing: 'Small',
+      });
+    }
+  }
+
   if (hasSuccesses) {
     body.push(
-      { type: 'TextBlock', text: '✅ CREATED', size: 'Small', weight: 'Bolder', color: 'good', spacing: 'Medium', separator: true },
+      { type: 'TextBlock', text: '✅ CREATED (Business Central)', size: 'Small', weight: 'Bolder', color: 'good', spacing: 'Medium', separator: true },
       { type: 'TextBlock', text: truncatedList(successes.map(orderRow)).join('\n\n'), wrap: true, size: 'Small', spacing: 'Small' },
     );
   }
@@ -120,7 +145,7 @@ export function buildPoUploadBatchCard(payload: PoUploadBatchPayload): Attachmen
       return `🗂️ \`${e.po_ref}\` — ${reason}`;
     });
     body.push(
-      { type: 'TextBlock', text: '🗂️ BUFFERED (needs /reconcile)', size: 'Small', weight: 'Bolder', color: 'attention', spacing: 'Medium', separator: true },
+      { type: 'TextBlock', text: '🗂️ BUFFERED (Business Central — needs /reconcile)', size: 'Small', weight: 'Bolder', color: 'attention', spacing: 'Medium', separator: true },
       { type: 'TextBlock', text: truncatedList(errorLines).join('\n\n'), wrap: true, size: 'Small', spacing: 'Small' },
     );
   }

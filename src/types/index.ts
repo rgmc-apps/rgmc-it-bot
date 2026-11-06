@@ -84,12 +84,17 @@ export interface PoUploadOrderResult {
   lines_skipped: number;
   from_buffer?: boolean;
   unmatched_items?: { sku: string | null; description: string | null }[];
+  // Whether this PO actually made it into MSSQL (IMS) this run — undefined/null means
+  // unknown (e.g. a buffered retry with no MSSQL-insert data recorded). Reported
+  // separately from the BC outcome (this result existing in `successes` at all).
+  mssql_inserted?: boolean | null;
 }
 
 export interface PoUploadErrorResult {
   po_ref: string;
   error: string;
   attempt_count?: number;
+  mssql_inserted?: boolean | null;
 }
 
 export interface PoUploadBatchPayload {
