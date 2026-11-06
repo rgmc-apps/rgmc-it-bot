@@ -83,7 +83,10 @@ export interface PoUploadOrderResult {
   lines_created: number;
   lines_skipped: number;
   from_buffer?: boolean;
-  unmatched_items?: { sku: string | null; description: string | null }[];
+  // reason is "no_item_reference" (SKU itself was blank) or "item_not_matched" (SKU
+  // given but no BC item reference matched it) — undefined for older payloads that
+  // predate this split, where both cases were lumped together.
+  unmatched_items?: { sku: string | null; description: string | null; reason?: string }[];
   // Whether this PO actually made it into MSSQL (IMS) this run — undefined/null means
   // unknown (e.g. a buffered retry with no MSSQL-insert data recorded). Reported
   // separately from the BC outcome (this result existing in `successes` at all).
@@ -112,6 +115,22 @@ export interface PoUploadUnmatchedPayload {
   company: string;
   src_company: string;
   flagged: PoUploadOrderResult[];   // successes with a non-empty unmatched_items
+}
+
+// ── BC-only retrigger notification ──────────────────────────────────────────────
+// Sent by rgmc-worker-pool's so_import_worker.py (bot_notify.notify_bc_retrigger)
+// when a "Retrigger BC only" action (Search/Handoff History tabs) completes —
+// distinct from po.batch above, which models a full upload run.
+
+export interface BcRetriggerPayload {
+  event: 'bc.retrigger';
+  label: string;
+  companies: string[];
+  po_ref_numbers: string[];
+  // Whichever of _run_sync_from_cloudsql's or _run_backfill_from_cloudsql's own
+  // summary dict shape was returned — passed through as-is, not reshaped.
+  summary: Record<string, number>;
+  requested_by: { name?: string; email?: string; department?: string; company?: string };
 }
 
 export interface RegistrationCode {

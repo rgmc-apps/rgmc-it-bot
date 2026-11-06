@@ -1,5 +1,5 @@
 import { Attachment, CardFactory } from 'botbuilder';
-import { PoUploadBatchPayload, PoUploadOrderResult, PoUploadUnmatchedPayload } from '../types';
+import { BcRetriggerPayload, PoUploadBatchPayload, PoUploadOrderResult, PoUploadUnmatchedPayload } from '../types';
 import { config } from '../config';
 
 type ContainerStyle = 'default' | 'emphasis' | 'good' | 'attention' | 'warning';
@@ -170,7 +170,7 @@ export function buildPoUploadUnmatchedCard(payload: PoUploadUnmatchedPayload): A
 
   const rows = flagged.map(r => {
     const items = (r.unmatched_items || []).slice(0, 3)
-      .map(it => it.sku || '(blank SKU)')
+      .map(it => it.reason === 'no_item_reference' ? '(no item reference)' : (it.sku || '(blank SKU)'))
       .join(', ');
     const more = (r.unmatched_items?.length || 0) > 3 ? `, +${(r.unmatched_items!.length) - 3} more` : '';
     return `\`${r.po_ref}\` → **${r.order_no}** — ${r.customer_name}\n_Unmatched: ${items}${more}_`;
@@ -194,6 +194,68 @@ export function buildPoUploadUnmatchedCard(payload: PoUploadUnmatchedPayload): A
       ],
     },
     { type: 'TextBlock', text: truncatedList(rows).join('\n\n'), wrap: true, size: 'Small', spacing: 'Medium' },
+  ];
+
+  const card = {
+    type:    'AdaptiveCard',
+    version: '1.4',
+    body,
+    actions: [],
+  };
+
+  return CardFactory.adaptiveCard(card);
+}
+
+// ── BC-only retrigger result (bot_notify.notify_bc_retrigger) ─────────────────
+// summary is whichever of _run_sync_from_cloudsql's or _run_backfill_from_cloudsql's
+// own summary dict was sent — only the keys that happen to be present are shown.
+
+const SUMMARY_LABELS: Record<string, string> = {
+  orders_synced: 'Checked',
+  orders_not_found: 'Not found in BC',
+  orders_errored: 'Errored',
+  orders_created: 'Created',
+  orders_failed: 'Failed',
+  orders_skipped_existing: 'Already in BC',
+  lines_created: 'Lines added',
+  lines_skipped: 'Lines skipped',
+  unmatched_items: 'Unmatched items',
+};
+
+export function buildBcRetriggerCard(payload: BcRetriggerPayload): Attachment {
+  const { label, companies, po_ref_numbers, summary, requested_by } = payload;
+  const hasFailure = (summary.orders_errored || summary.orders_failed || 0) > 0;
+  const style: ContainerStyle = hasFailure ? 'warning' : 'good';
+
+  const summaryText = Object.entries(summary)
+    .filter(([, v]) => typeof v === 'number')
+    .map(([k, v]) => `${SUMMARY_LABELS[k] || k}: ${v}`)
+    .join('   •   ');
+
+  const requesterText = requested_by?.name
+    ? `Requested by ${requested_by.name}${requested_by.department ? ` (${requested_by.department})` : ''}`
+    : null;
+
+  const body: object[] = [
+    {
+      type:  'Container',
+      style,
+      bleed: true,
+      items: [
+        { type: 'TextBlock', text: '🔁  RETRIGGER BC ONLY', size: 'Small', weight: 'Bolder', spacing: 'None' },
+        { type: 'TextBlock', text: label, size: 'Large', weight: 'Bolder', spacing: 'None', wrap: true },
+        {
+          type:     'TextBlock',
+          text:     `${companies.join(', ')}  •  ${po_ref_numbers.length} PO(s) checked`,
+          size:     'Small',
+          isSubtle: true,
+          spacing:  'None',
+        },
+      ],
+    },
+    { type: 'TextBlock', text: summaryText, wrap: true, size: 'Small', spacing: 'Medium' },
+    { type: 'TextBlock', text: truncatedList(po_ref_numbers.map(r => `\`${r}\``)).join(', '), wrap: true, size: 'Small', isSubtle: true, spacing: 'Small' },
+    ...(requesterText ? [{ type: 'TextBlock', text: requesterText, size: 'Small', isSubtle: true, spacing: 'Small' }] : []),
   ];
 
   const card = {

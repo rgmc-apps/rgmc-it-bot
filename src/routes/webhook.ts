@@ -8,10 +8,11 @@ import {
   notifyAssignment,
   notifyPoUploadBatch,
   notifyPoUploadUnmatched,
+  notifyBcRetrigger,
 } from '../services/notificationService';
 import {
   NotifyTicketPayload, NotifyOutagePayload, MentionPayload, AssignmentPayload,
-  PoUploadBatchPayload, PoUploadUnmatchedPayload,
+  PoUploadBatchPayload, PoUploadUnmatchedPayload, BcRetriggerPayload,
 } from '../types';
 import { config } from '../config';
 
@@ -173,6 +174,28 @@ export function createWebhookRouter(adapter: CloudAdapter): Router {
       res.json({ success: true, message: 'Notification dispatched' });
     } catch (err) {
       console.error('po-upload-unmatched notify error:', err);
+      res.status(500).json({ error: 'Failed to dispatch notification' });
+    }
+  });
+
+  /**
+   * POST /api/notify/bc-retrigger
+   * Called by rgmc-worker-pool's so_import_worker.py (bot_notify.notify_bc_retrigger)
+   * when a "Retrigger BC only" action (Search/Handoff History tabs) completes.
+   *
+   * Body: BcRetriggerPayload
+   */
+  router.post('/bc-retrigger', async (req: Request, res: Response) => {
+    const payload = req.body as BcRetriggerPayload;
+    if (!payload?.summary || !payload?.po_ref_numbers) {
+      res.status(400).json({ error: 'Missing summary/po_ref_numbers in payload' });
+      return;
+    }
+    try {
+      await notifyBcRetrigger(payload, adapter);
+      res.json({ success: true, message: 'Notification dispatched' });
+    } catch (err) {
+      console.error('bc-retrigger notify error:', err);
       res.status(500).json({ error: 'Failed to dispatch notification' });
     }
   });

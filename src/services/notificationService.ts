@@ -5,10 +5,10 @@ import { buildTicketCreatedCard, buildTicketUpdatedCard } from '../cards/ticketC
 import { buildOutageCard } from '../cards/outageCard';
 import { buildMentionCard } from '../cards/mentionCard';
 import { buildAssignmentCard } from '../cards/assignmentCard';
-import { buildPoUploadBatchCard, buildPoUploadUnmatchedCard } from '../cards/poUploadCard';
+import { buildBcRetriggerCard, buildPoUploadBatchCard, buildPoUploadUnmatchedCard } from '../cards/poUploadCard';
 import {
   Ticket, TicketChanges, Outage, MentionPayload, AssignmentPayload,
-  PoUploadBatchPayload, PoUploadUnmatchedPayload, PoUploadSubscription,
+  PoUploadBatchPayload, PoUploadUnmatchedPayload, PoUploadSubscription, BcRetriggerPayload,
 } from '../types';
 import { config } from '../config';
 
@@ -109,6 +109,19 @@ export async function notifyPoUploadUnmatched(payload: PoUploadUnmatchedPayload,
 
   // Unmatched-item orders already reached BC — gate on the same flag as a
   // successful handoff, not notify_po_buffer (these aren't buffer entries).
+  await Promise.allSettled(
+    subscriptions
+      .filter((s) => s.notify_po_bc)
+      .map((s) => sendToSubscription(adapter, s, card))
+  );
+}
+
+export async function notifyBcRetrigger(payload: BcRetriggerPayload, adapter: CloudAdapter): Promise<void> {
+  const subscriptions = await getAllPoUploadSubscriptions();
+  const card = buildBcRetriggerCard(payload);
+
+  // Same gate as notifyPoUploadUnmatched — this is a BC-outcome notification, not a
+  // buffer one (po.unmatched's own precedent for "already reached BC").
   await Promise.allSettled(
     subscriptions
       .filter((s) => s.notify_po_bc)
