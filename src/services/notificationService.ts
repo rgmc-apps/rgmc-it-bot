@@ -1,5 +1,5 @@
 import { CloudAdapter, MessageFactory, TurnContext } from 'botbuilder';
-import { getAllSubscriptions, getUserLinkByUsername, getAllPoUploadSubscriptions } from './supabase';
+import { getAllSubscriptions, getUserLinkByUsername, getAllPoUploadSubscriptions, getFollowersByTicketNumber } from './supabase';
 import { matchesFilters } from './channelService';
 import { buildTicketCreatedCard, buildTicketUpdatedCard } from '../cards/ticketCard';
 import { buildOutageCard } from '../cards/outageCard';
@@ -39,6 +39,21 @@ export async function notifyTicketCreated(ticket: Ticket, adapter: CloudAdapter)
       .filter((s) => matchesFilters(s, ticket, 'created'))
       .map((s) => sendToSubscription(adapter, s, card))
   );
+
+  await notifyTicketFollowers(ticket, card, adapter);
+}
+
+// DMs anyone who `follow <TICKET_NUMBER>`'d this specific ticket (reporters
+// without a Gateway username — see bot_ticket_followers) — separate from the
+// channel subscriptions above, which are team/department-wide.
+async function notifyTicketFollowers(
+  ticket: Ticket,
+  card: ReturnType<typeof buildTicketCreatedCard>,
+  adapter: CloudAdapter
+): Promise<void> {
+  if (!ticket.ticket_number) return;
+  const followers = await getFollowersByTicketNumber(ticket.ticket_number);
+  await Promise.allSettled(followers.map((f) => sendToSubscription(adapter, f, card)));
 }
 
 export async function notifyTicketUpdated(
@@ -59,6 +74,8 @@ export async function notifyTicketUpdated(
       .filter((s) => matchesFilters(s, ticket, eventType))
       .map((s) => sendToSubscription(adapter, s, card))
   );
+
+  await notifyTicketFollowers(ticket, card, adapter);
 }
 
 export async function notifyMention(payload: MentionPayload, adapter: CloudAdapter): Promise<void> {

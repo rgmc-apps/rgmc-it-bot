@@ -219,6 +219,16 @@ export function buildHelpCard(): Attachment {
         'Look up the status of a ticket (e.g. ticket TIM-25021900).',
         'warning',
       ),
+      cmdRow(
+        'follow <NUMBER>',
+        'Get DM\'d here whenever that specific ticket\'s status or assignee changes — for reporters without a Gateway account.',
+        'warning',
+      ),
+      cmdRow(
+        'unfollow <NUMBER>',
+        'Stop getting updates on that ticket.',
+        'attention',
+      ),
 
       // ── 💡 Feature requests ──────────────────────────────────────────────────
       sectionHeader('💡', 'FEATURE REQUESTS', 'warning'),

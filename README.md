@@ -152,6 +152,8 @@ All commands are issued by **@mentioning** the bot in a Teams channel or chat.
 | `subscribe me <username>` | Link this chat directly to a specific RGMC Gateway username, bypassing the email match |
 | `unlink` | Stop receiving mention/assignment DMs |
 | `whoami` | Check whether your account is linked |
+| `follow <TICKET-NUMBER>` | Get DM'd here whenever that specific ticket's status or assignee changes — for reporters without a Gateway account (e.g. public helpdesk form submitters). Offered as a "connect MS Teams" link on rgmc-gateway's ticket forms after submission |
+| `unfollow <TICKET-NUMBER>` | Stop receiving updates on that ticket |
 
 > 📌 **Valid priority values:** `low`, `medium`, `high`, `critical`
 >

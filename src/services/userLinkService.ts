@@ -6,6 +6,9 @@ import {
   deleteUserLinkByUsername,
   getUserLinkByUsername,
   getUserLinkByAadObjectId,
+  getTicketByNumber,
+  upsertTicketFollower,
+  deleteTicketFollower,
 } from './supabase';
 import { BotUserLink } from '../types';
 
@@ -180,6 +183,76 @@ export async function getLinkStatusMessage(context: TurnContext): Promise<string
     return `📭 Not linked yet. Type \`link\` to auto-link by your Teams email, or \`subscribe me <username>\` to link a specific RGMC Gateway account.`;
   }
   return `📬 Linked to RGMC Gateway account **${existing.username}**. You'll receive mention and assignment DMs here.\n\nType \`unlink\` to stop.`;
+}
+
+// Lets any 1:1 chat follow a specific ticket by number, for reporters who
+// filed from rgmc-gateway's public helpdesk forms and have no Gateway
+// username — so the bot_user_links username-based link doesn't apply to
+// them. No ownership check beyond the ticket number itself, matching the
+// existing `ticket <NUMBER>` status-lookup command, which is open to anyone.
+export async function followTicket(context: TurnContext, ticketNumberInput: string): Promise<LinkResult> {
+  if (!isPersonalChat(context)) {
+    return {
+      success: false,
+      message: '❌ Following a ticket only works in a 1:1 chat with me — not in a channel or group chat. Message me directly in Teams.',
+    };
+  }
+
+  const ticketNumber = ticketNumberInput.trim().toUpperCase();
+  if (!ticketNumber) {
+    return { success: false, message: 'Kulang ka ng ticket number. Example: `follow TIM-25021900`' };
+  }
+
+  const ticket = await getTicketByNumber(ticketNumber);
+  if (!ticket) {
+    return { success: false, message: `❌ Couldn't find ticket **${ticketNumber}**. Double-check the number and try again.` };
+  }
+
+  const activity = context.activity;
+  const teamsData = activity.channelData as Record<string, unknown> | undefined;
+  const tenantId = (teamsData?.['tenant'] as { id?: string } | undefined)?.id || null;
+  const email = await resolveEmail(context); // best-effort, not required to follow
+
+  const follower = await upsertTicketFollower({
+    ticketNumber,
+    conversationId: activity.conversation.id,
+    email,
+    serviceUrl: activity.serviceUrl,
+    conversationRef: TurnContext.getConversationReference(activity),
+    tenantId,
+  });
+
+  if (!follower) {
+    return { success: false, message: '❌ Failed to save your follow. Please try again.' };
+  }
+
+  return {
+    success: true,
+    message: [
+      `✅ You're now following **${ticket.ticket_number}**!`,
+      ``,
+      `I'll DM you right here whenever this ticket's status or assignee changes.`,
+      ``,
+      `Type \`unfollow ${ticket.ticket_number}\` anytime to stop.`,
+    ].join('\n'),
+  };
+}
+
+export async function unfollowTicket(context: TurnContext, ticketNumberInput: string): Promise<LinkResult> {
+  if (!isPersonalChat(context)) {
+    return { success: false, message: '❌ Unfollowing only works in a 1:1 chat with me.' };
+  }
+
+  const ticketNumber = ticketNumberInput.trim().toUpperCase();
+  if (!ticketNumber) {
+    return { success: false, message: 'Kulang ka ng ticket number. Example: `unfollow TIM-25021900`' };
+  }
+
+  const ok = await deleteTicketFollower(ticketNumber, context.activity.conversation.id);
+  if (!ok) {
+    return { success: false, message: '❌ Failed to unfollow. Please try again.' };
+  }
+  return { success: true, message: `✅ Unfollowed **${ticketNumber}** — you will no longer receive updates on it here.` };
 }
 
 // Best-effort, silent auto-link attempt when the bot is installed in a

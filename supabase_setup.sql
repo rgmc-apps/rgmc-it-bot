@@ -124,6 +124,39 @@ ALTER TABLE public.bot_user_links ENABLE ROW LEVEL SECURITY;
 
 
 -- ─────────────────────────────────────────────────────────────────────────────
+-- Ticket followers
+-- One row per personal (1:1) chat that asked to be DM'd about one specific
+-- ticket (`follow <TICKET_NUMBER>`) — for reporters who filed a ticket from
+-- rgmc-gateway's public helpdesk forms and have no RGMC Gateway account/
+-- username, so they can't use bot_user_links. Keyed by conversation_id
+-- (stable per 1:1 chat, same source as bot_subscriptions.channel_id) so
+-- re-following the same ticket from the same chat just updates the row.
+-- ─────────────────────────────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS public.bot_ticket_followers (
+    id                  UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+
+    ticket_number       TEXT        NOT NULL,
+    conversation_id     TEXT        NOT NULL,
+    email               TEXT,
+
+    -- Teams identifiers for the 1:1 conversation
+    service_url         TEXT        NOT NULL,
+    conversation_ref    JSONB       NOT NULL,           -- full ConversationReference for proactive messages
+    tenant_id           TEXT,
+
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    UNIQUE (ticket_number, conversation_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_bot_ticket_followers_ticket_number ON public.bot_ticket_followers (ticket_number);
+
+ALTER TABLE public.bot_ticket_followers ENABLE ROW LEVEL SECURITY;
+
+
+-- ─────────────────────────────────────────────────────────────────────────────
 -- issues table additions
 -- These columns are expected by the bot's ticket status card.
 -- If the issues table was created by rgmc-gateway's supabase_setup.sql,

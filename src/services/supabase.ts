@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { ConversationReference } from 'botbuilder';
 import { config } from '../config';
-import { BotSubscription, BotUserLink, PoUploadSubscription, RegistrationCode, System, Ticket } from '../types';
+import { BotSubscription, BotTicketFollower, BotUserLink, PoUploadSubscription, RegistrationCode, System, Ticket } from '../types';
 
 export const db = createClient(config.supabaseUrl, config.supabaseKey);
 
@@ -342,6 +342,54 @@ export async function listUserLinks(): Promise<BotUserLink[]> {
     .order('created_at', { ascending: false });
   if (error || !data) return [];
   return data as BotUserLink[];
+}
+
+// ─── Per-ticket followers (reporters without a Gateway account/username) ──────
+
+export async function getFollowersByTicketNumber(ticketNumber: string): Promise<BotTicketFollower[]> {
+  const { data, error } = await db
+    .from('bot_ticket_followers')
+    .select('*')
+    .eq('ticket_number', ticketNumber.toUpperCase().trim());
+  if (error || !data) return [];
+  return data as BotTicketFollower[];
+}
+
+export async function upsertTicketFollower(params: {
+  ticketNumber: string;
+  conversationId: string;
+  email: string | null;
+  serviceUrl: string;
+  conversationRef: Partial<ConversationReference>;
+  tenantId: string | null;
+}): Promise<BotTicketFollower | null> {
+  const { data, error } = await db
+    .from('bot_ticket_followers')
+    .upsert({
+      ticket_number: params.ticketNumber.toUpperCase().trim(),
+      conversation_id: params.conversationId,
+      email: params.email,
+      service_url: params.serviceUrl,
+      conversation_ref: params.conversationRef,
+      tenant_id: params.tenantId,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'ticket_number,conversation_id' })
+    .select()
+    .single();
+  if (error) {
+    console.error('upsertTicketFollower error:', error.message);
+    return null;
+  }
+  return data as BotTicketFollower;
+}
+
+export async function deleteTicketFollower(ticketNumber: string, conversationId: string): Promise<boolean> {
+  const { error } = await db
+    .from('bot_ticket_followers')
+    .delete()
+    .eq('ticket_number', ticketNumber.toUpperCase().trim())
+    .eq('conversation_id', conversationId);
+  return !error;
 }
 
 function generateRandomCode(): string {

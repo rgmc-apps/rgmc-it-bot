@@ -154,6 +154,18 @@ export interface BotUserLink {
   updated_at: string;
 }
 
+export interface BotTicketFollower {
+  id: string;
+  ticket_number: string;
+  conversation_id: string;
+  email: string | null;
+  service_url: string;
+  conversation_ref: Partial<ConversationReference>;
+  tenant_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export type MentionEntityType = 'issue' | 'epic' | 'dev_item' | 'task';
 
 export interface MentionPayload {

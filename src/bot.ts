@@ -17,6 +17,8 @@ import {
   unlinkPersonalChat,
   getLinkStatusMessage,
   autoLinkOnInstall,
+  followTicket,
+  unfollowTicket,
 } from './services/userLinkService';
 import { submitFeatureRequest } from './services/featureRequestService';
 import { buildTicketStatusCard } from './cards/ticketCard';
@@ -246,6 +248,33 @@ export class RgmcItBot extends TeamsActivityHandler {
           return;
         }
         await context.sendActivity(MessageFactory.attachment(buildTicketStatusCard(ticket)));
+        break;
+      }
+
+      case 'follow': {
+        const ticketNumber = args.join(' ').trim();
+        if (!ticketNumber) {
+          await context.sendActivity(pick([
+            `Anong ticket number yun? 🎫 Example: \`@RGMC IT Bot follow TIM-25021900\``,
+            `Follow... ano? 🤷 Kulang ka ng ticket number. Example: \`@RGMC IT Bot follow TIM-25021900\``,
+          ]));
+          return;
+        }
+        const result = await followTicket(context, ticketNumber);
+        await context.sendActivity(result.message);
+        break;
+      }
+
+      case 'unfollow': {
+        const ticketNumber = args.join(' ').trim();
+        if (!ticketNumber) {
+          await context.sendActivity(pick([
+            `Alin ang i-unfollow? 🤔 Example: \`@RGMC IT Bot unfollow TIM-25021900\``,
+          ]));
+          return;
+        }
+        const result = await unfollowTicket(context, ticketNumber);
+        await context.sendActivity(result.message);
         break;
       }
 
